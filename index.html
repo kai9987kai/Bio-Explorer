@@ -343,6 +343,70 @@
     .tooltip .t{ font-weight: 800; margin-bottom: 4px; }
     .tooltip .m{ color: var(--muted); font-family: var(--mono); font-size: 10px; }
 
+
+    /* Autocomplete */
+    .autocomplete{
+      position: relative;
+      min-width: 240px;
+      max-width: 520px;
+      flex: 1 1 auto;
+    }
+    .autocomplete input{
+      width: 360px;
+      max-width: 70vw;
+    }
+    .suggestions{
+      position: absolute;
+      top: 42px;
+      left: 0;
+      right: 0;
+      z-index: 99;
+      background: rgba(10,12,22,0.96);
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 14px 30px rgba(0,0,0,0.45);
+      backdrop-filter: blur(10px);
+      max-height: 340px;
+      overflow-y: auto;
+    }
+    .suggestions.hidden{ display:none; }
+    .sitem{
+      padding: 9px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      cursor: pointer;
+      user-select: none;
+    }
+    .sitem:last-child{ border-bottom: none; }
+    .sitem:hover{ background: rgba(255,255,255,0.08); }
+    .sitem.active{ background: rgba(255,255,255,0.12); }
+    .sitem .main{
+      font-size: 12px;
+      font-weight: 800;
+      color: rgba(255,255,255,0.92);
+      line-height: 1.15;
+    }
+    .sitem .sub{
+      margin-top: 3px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.70);
+      line-height: 1.2;
+    }
+    .sitem .sub code{ font-family: var(--mono); font-size: 10px; }
+    .sitem .tag{
+      display:inline-flex;
+      align-items:center;
+      gap: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      font-size: 10px;
+      color: rgba(255,255,255,0.70);
+      margin-left: 6px;
+    }
+    .sitem .tag strong{ color: rgba(255,255,255,0.92); }
+
     /* Footer */
     footer{
       padding: 10px 12px 16px 12px;
@@ -378,8 +442,11 @@
       <div class="controls">
         <div class="field">
           <label for="q">Gene / UniProt / text</label>
-          <div class="row">
-            <input id="q" type="text" placeholder="TP53, BRCA1, PTEN, P04637 …" />
+          <div class="row" style="align-items:flex-start;">
+            <div class="autocomplete">
+              <input id="q" type="text" placeholder="TP53, BRCA1, PTEN, P04637 …" autocomplete="off" />
+              <div id="suggestions" class="suggestions hidden" role="listbox" aria-label="Gene suggestions"></div>
+            </div>
             <button class="btn primary" id="btnLoad">Load</button>
           </div>
         </div>
@@ -464,6 +531,8 @@
                   <div class="k">STRING nodes</div><div class="v"><span id="mNodes">—</span></div>
                   <div class="k">STRING edges</div><div class="v"><span id="mEdges">—</span></div>
                   <div class="k">AlphaFold model</div><div class="v"><span id="mAF">—</span></div>
+                  <div class="k">Network density</div><div class="v"><span id="mDensity">—</span></div>
+                  <div class="k">Mean pLDDT</div><div class="v"><span id="mPlddt">—</span></div>
                 </div>
               </div>
             </div>
@@ -535,11 +604,31 @@
 
             <div class="list" style="margin-top:10px;">
               <div class="head">
+                <h3>Selection details</h3>
+                <span class="badge">node / edge</span>
+              </div>
+              <div class="bd small muted" id="selDetails" style="padding:10px;">
+                Click a node or edge to see evidence + quick metrics.
+              </div>
+            </div>
+
+            <div class="list" style="margin-top:10px;">
+              <div class="head">
                 <h3>Highlighted by pathway</h3>
                 <span class="badge">Reactome</span>
               </div>
               <div class="bd small muted" id="pathHighlightInfo" style="padding:10px;">
                 Select a pathway in the Pathways tab to highlight its participants here.
+              </div>
+            </div>
+
+            <div class="list" style="margin-top:10px;">
+              <div class="head">
+                <h3>Top hubs</h3>
+                <span class="badge">degree</span>
+              </div>
+              <div class="items" id="hubList" style="max-height: 240px;">
+                <div class="item"><div class="meta">Load a network to compute hub nodes.</div></div>
               </div>
             </div>
           </div>
@@ -695,30 +784,69 @@
 
 <script>
 /**
- * Kai9987kai BioExplorer — single file
- * - UniProt: https://rest.uniprot.org/
- * - STRING:  https://string-db.org/api/
- * - Reactome: https://reactome.org/ContentService/data/
- * - AlphaFold: https://alphafold.ebi.ac.uk/api/prediction/{UniProtAcc}
+ * Kai9987kai BioExplorer — single file (v2)
+ * Features:
+ * - UniProt: summary, FASTA, feature track
+ * - STRING: interactive network + evidence channels + exports + hub analysis
+ * - Reactome: mapping + participants + network highlighting
+ * - AlphaFold: structure viewer + pLDDT parsing + PAE image (when available)
+ * - Autocomplete: gene/protein suggestions as you type (UniProt-backed)
+ *
+ * Data sources:
+ * - UniProt REST:   https://rest.uniprot.org/
+ * - STRING API:     https://string-db.org/api/
+ * - Reactome:       https://reactome.org/ContentService/data/
+ * - AlphaFold DB:   https://alphafold.ebi.ac.uk/api/prediction/{UniProtAcc}
  *
  * Notes on CORS:
- * Most of these endpoints support browser access, but some environments block "null" origin (file://).
- * If so, serve locally (python -m http.server).
+ * Some browsers block requests from file:// (null origin). Serve locally:
+ *   python -m http.server 8000
+ *   http://localhost:8000/kai9987kai_bioexplorer.html
  */
 
-const TTL_MS = 24 * 60 * 60 * 1000; // 24h cache
+const TTL_MS = 24 * 60 * 60 * 1000; // 24h cache for "big" resources
 const app = {
   state: {
     queryRaw: "",
     taxId: 9606,
+
     uniprotAcc: null,
     uniprot: null,
-    reactome: { mode: "pathways", items: [], selected: null, participants: [], highlightSet: new Set() },
-    string: { requiredScore: 700, neighbors: 20, networkType: "functional", elements: null, selectedNode: null, selectedEdgeScore: null },
-    alphafold: { meta: null, pdbUrl: null, paeImageUrl: null },
+    uniprotSummary: null,
+    features: [],
+
+    reactome: {
+      mode: "pathways",
+      items: [],
+      selected: null,
+      participants: [],
+      highlightSet: new Set()
+    },
+
+    string: {
+      requiredScore: 700,
+      neighbors: 20,
+      networkType: "functional",
+      elements: null,
+      selectedNode: null,
+      selectedEdge: null,
+      hubs: []
+    },
+
+    alphafold: {
+      meta: null,
+      pdbUrl: null,
+      paeImageUrl: null,
+      plddt: null,            // per-residue array (1-indexed, values 0..100)
+      plddtSummary: null,     // mean/min/max/frac + segments
+      segments50: [],
+      segments70: []
+    },
+
     report: "",
     notes: ""
   },
+
   cache: {
     get(key){
       try{
@@ -745,6 +873,18 @@ const app = {
       try{ localStorage.clear(); }catch{}
     }
   }
+};
+
+// Autocomplete state (in-memory only; avoids localStorage bloat)
+const ac = {
+  open: false,
+  items: [],
+  index: -1,
+  timer: null,
+  abort: null,
+  lastKey: "",
+  mem: new Map(), // key -> items
+  memOrder: []
 };
 
 // ------- DOM helpers -------
@@ -796,9 +936,10 @@ function downloadText(filename, text){
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
 }
 
+// ------- Fetch helpers -------
 async function fetchJsonCached(url, opts={}, ttl=TTL_MS){
   const key = "cache:" + url;
   const cached = app.cache.get(key);
@@ -811,6 +952,16 @@ async function fetchJsonCached(url, opts={}, ttl=TTL_MS){
   const data = await res.json();
   app.cache.set(key, data, ttl);
   return data;
+}
+
+// No-cache JSON (for suggestions)
+async function fetchJson(url, opts={}){
+  const res = await fetch(url, opts);
+  if(!res.ok){
+    const txt = await res.text().catch(()=> "");
+    throw new Error(`HTTP ${res.status} for ${url}${txt ? " — " + txt.slice(0,200) : ""}`);
+  }
+  return await res.json();
 }
 
 async function fetchText(url, opts={}){
@@ -829,20 +980,64 @@ function looksLikeAccession(q){
 }
 
 async function uniprotFetchEntry(acc){
-  // UniProtKB entry endpoint (REST). Common: https://rest.uniprot.org/uniprotkb/{accession}.json
   const url = `https://rest.uniprot.org/uniprotkb/${encodeURIComponent(acc)}.json`;
   return await fetchJsonCached(url);
 }
 
-async function uniprotSearch(query, taxId, size=10){
-  const reviewed = ""; // keep flexible; could add "&query=reviewed:true" if desired
-  const q = encodeURIComponent(`(${query}) AND (organism_id:${taxId}) ${reviewed}`);
+async function uniprotSearch(query, taxId, size=10, opts={}, ttl=TTL_MS){
+  const q = encodeURIComponent(`(${query}) AND (organism_id:${taxId})`);
   const url = `https://rest.uniprot.org/uniprotkb/search?query=${q}&format=json&size=${size}`;
-  return await fetchJsonCached(url);
+  return await fetchJsonCached(url, opts, ttl);
+}
+
+// Suggest API (no localStorage cache; includes in-memory cache + abort)
+async function uniprotSuggest(query, taxId, signal){
+  const normalized = query.trim();
+  if(normalized.length < 2) return [];
+  const key = `${taxId}:${normalized.toUpperCase()}`;
+  if(ac.mem.has(key)) return ac.mem.get(key);
+
+  const q = encodeURIComponent(`(${normalized}) AND (organism_id:${taxId})`);
+  const url = `https://rest.uniprot.org/uniprotkb/search?query=${q}&format=json&size=10`;
+  const data = await fetchJson(url, { signal });
+
+  const results = Array.isArray(data?.results) ? data.results : [];
+  const items = results.slice(0, 10).map(r => {
+    const acc = r.primaryAccession || r.uniProtkbId || r.accession || "";
+    const proteinName =
+      r.proteinDescription?.recommendedName?.fullName?.value
+      || r.proteinDescription?.submissionNames?.[0]?.fullName?.value
+      || r.proteinDescription?.alternativeNames?.[0]?.fullName?.value
+      || "—";
+    const genes = (r.genes || []).map(g => g.geneName?.value).filter(Boolean);
+    const gene = genes[0] || "";
+    const org = r.organism?.scientificName || r.organism?.commonName || "";
+    const entryType = r.entryType || "";
+    const reviewed = String(entryType).toLowerCase().includes("reviewed");
+    return { acc, gene, proteinName, org, reviewed, entryType };
+  }).filter(it => it.acc);
+
+  // Deduplicate: prefer unique (gene|acc)
+  const seen = new Set();
+  const dedup = [];
+  for(const it of items){
+    const k = (it.gene || it.acc).toUpperCase();
+    if(seen.has(k)) continue;
+    seen.add(k);
+    dedup.push(it);
+  }
+
+  // keep a tiny LRU
+  ac.mem.set(key, dedup);
+  ac.memOrder.push(key);
+  if(ac.memOrder.length > 120){
+    const drop = ac.memOrder.shift();
+    if(drop) ac.mem.delete(drop);
+  }
+  return dedup;
 }
 
 function pickBestUniProtResult(results){
-  // Prefer reviewed if present, else first.
   if(!results || !Array.isArray(results.results)) return null;
   const arr = results.results;
   if(!arr.length) return null;
@@ -868,34 +1063,36 @@ function uniprotExtractSummary(entry){
   const seq = entry.sequence?.value || "";
   const fn = (entry.comments || [])
     .find(c => String(c.commentType).toLowerCase() === "function")?.texts?.[0]?.value
-    || (entry.comments || []).find(c => String(c.commentType).toLowerCase() === "function")?.text
     || "";
   return { acc, proteinName, genes, geneSyn, org, tax, len, seq, fn };
 }
 
 function uniprotExtractFeatures(entry){
   const features = entry.features || [];
-  // Keep only those with a defined begin/end. UniProt sometimes uses "position" instead of range.
   return features.map(f => {
     const type = f.type || f.featureType || "Feature";
     const desc = f.description || f.featureDescription || "";
     const loc = f.location || {};
     const start = loc.start?.value || loc.begin?.value || loc.position?.value || null;
     const end = loc.end?.value || loc.finish?.value || loc.position?.value || null;
-    return { type, desc, start: start ? Number(start) : null, end: end ? Number(end) : null, evidence: f.evidences || [] };
+    return {
+      type,
+      desc,
+      start: start ? Number(start) : null,
+      end: end ? Number(end) : null,
+      evidence: f.evidences || []
+    };
   }).filter(f => f.start && f.end && f.start <= f.end);
 }
 
 // ------- Reactome -------
 async function reactomeMapping(resource, identifier, mapTo, species){
-  // From docs: GET https://reactome.org/ContentService/data/mapping/{resource}/{identifier}/pathways or /reactions
   const base = "https://reactome.org/ContentService/data/mapping";
   const url = `${base}/${encodeURIComponent(resource)}/${encodeURIComponent(identifier)}/${encodeURIComponent(mapTo)}?species=${encodeURIComponent(species)}`;
   return await fetchJsonCached(url);
 }
 
 async function reactomeParticipantsReferenceEntities(eventId){
-  // From docs: GET https://reactome.org/ContentService/data/participants/{id}/referenceEntities
   const url = `https://reactome.org/ContentService/data/participants/${encodeURIComponent(eventId)}/referenceEntities`;
   return await fetchJsonCached(url);
 }
@@ -906,8 +1103,6 @@ function reactomeEventLink(stId){
 
 // ------- STRING -------
 async function stringNetwork(identifier, species, requiredScore=700, neighbors=20, networkType="functional"){
-  // Docs: https://string-db.org/api/[output-format]/network
-  // For a single identifier, add_white_nodes controls neighborhood size.
   const base = "https://string-db.org/api/json/network";
   const params = new URLSearchParams({
     identifiers: identifier,
@@ -918,27 +1113,64 @@ async function stringNetwork(identifier, species, requiredScore=700, neighbors=2
     caller_identity: "kai9987kai_bioexplorer"
   });
   const url = `${base}?${params.toString()}`;
-  return await fetchJsonCached(url, {}, 6 * 60 * 60 * 1000); // cache 6h
+  return await fetchJsonCached(url, {}, 6 * 60 * 60 * 1000); // 6h cache
 }
 
 function parseStringNetwork(edges){
-  // edges: array of { preferredName_A/B, stringId_A/B, score }
   const nodesMap = new Map();
   const edgeEls = [];
+
+  const channels = ["nscore","fscore","pscore","ascore","escore","dscore","tscore"];
+
   for(const e of edges){
     const aId = e.stringId_A || e.preferredName_A;
     const bId = e.stringId_B || e.preferredName_B;
     const aName = e.preferredName_A || aId;
     const bName = e.preferredName_B || bId;
-    if(!nodesMap.has(aId)) nodesMap.set(aId, { data: { id: aId, label: aName, isQuery: false } });
-    if(!nodesMap.has(bId)) nodesMap.set(bId, { data: { id: bId, label: bName, isQuery: false } });
+
+    if(!nodesMap.has(aId)) nodesMap.set(aId, { data: { id: aId, label: aName, isQuery: "false" } });
+    if(!nodesMap.has(bId)) nodesMap.set(bId, { data: { id: bId, label: bName, isQuery: "false" } });
+
     const score = typeof e.score === "number" ? e.score : Number(e.score || 0);
-    edgeEls.push({ data: { id: `${aId}__${bId}`, source: aId, target: bId, score } });
+
+    const edata = { id: `${aId}__${bId}`, source: aId, target: bId, score };
+    // evidence channels if provided by API
+    for(const c of channels){
+      if(e[c] !== undefined){
+        const v = Number(e[c] || 0);
+        if(Number.isFinite(v)) edata[c] = v;
+      }
+    }
+    edgeEls.push({ data: edata });
   }
+
   return { nodes: Array.from(nodesMap.values()), edges: edgeEls };
 }
 
-// ------- Cytoscape -------
+// ------- Tooltip (shared) -------
+function tipEl(){ return $("#tooltip"); }
+
+function showTip(html, x, y){
+  const tip = tipEl();
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  tip.style.left = (x + 12) + "px";
+  tip.style.top  = (y + 12) + "px";
+}
+
+function moveTip(x, y){
+  const tip = tipEl();
+  if(tip.style.display === "none") return;
+  tip.style.left = (x + 12) + "px";
+  tip.style.top  = (y + 12) + "px";
+}
+
+function hideTip(){
+  const tip = tipEl();
+  tip.style.display = "none";
+}
+
+// ------- Cytoscape network -------
 let cy = null;
 
 function buildCy(elements, queryLabel){
@@ -1000,35 +1232,55 @@ function buildCy(elements, queryLabel){
       ]
     });
 
-    cy.on("tap", "node", (evt) => {
+    cy.on("tap", "node", (evt) => selectNode(evt.target));
+    cy.on("tap", "edge", (evt) => selectEdge(evt.target));
+    cy.on("tap", (evt) => { if(evt.target === cy) clearSelection(); });
+
+    // Hover tooltips (tiny but useful)
+    cy.on("mouseover", "node", (evt) => {
       const n = evt.target;
-      selectNode(n);
+      const oe = evt.originalEvent;
+      const deg = n.connectedEdges().length;
+      showTip(`<div class="t">${escapeHtml(n.data("label")||n.id())}</div><div class="m">degree=${deg} · id=${escapeHtml(n.id())}</div>`, oe.clientX, oe.clientY);
     });
-    cy.on("tap", "edge", (evt) => {
+    cy.on("mousemove", "node", (evt) => {
+      const oe = evt.originalEvent;
+      moveTip(oe.clientX, oe.clientY);
+    });
+    cy.on("mouseout", "node", () => hideTip());
+
+    cy.on("mouseover", "edge", (evt) => {
       const e = evt.target;
-      selectEdge(e);
+      const oe = evt.originalEvent;
+      const s = Number(e.data("score")||0);
+      const src = e.source().data("label") || e.source().id();
+      const tgt = e.target().data("label") || e.target().id();
+      showTip(`<div class="t">${escapeHtml(src)} ↔ ${escapeHtml(tgt)}</div><div class="m">score=${isFinite(s)?s.toFixed(3):"—"}</div>`, oe.clientX, oe.clientY);
     });
-    cy.on("tap", (evt) => {
-      if(evt.target === cy){
-        clearSelection();
-      }
+    cy.on("mousemove", "edge", (evt) => {
+      const oe = evt.originalEvent;
+      moveTip(oe.clientX, oe.clientY);
     });
+    cy.on("mouseout", "edge", () => hideTip());
   }else{
     cy.elements().remove();
     cy.add(elements);
   }
 
-  // Mark query node by label or best match.
-  let qNode = cy.nodes().filter(n => (n.data("label") || "").toUpperCase() === (queryLabel || "").toUpperCase());
-  if(qNode.length === 0){
-    // fallback: try by substring match on label
-    qNode = cy.nodes().filter(n => (n.data("label") || "").toUpperCase().includes((queryLabel || "").toUpperCase())).slice(0,1);
+  // Mark query node by exact label (best effort)
+  const qUpper = String(queryLabel || "").toUpperCase();
+  let qNode = cy.nodes().filter(n => String(n.data("label")||"").toUpperCase() === qUpper);
+  if(qNode.length === 0 && qUpper){
+    qNode = cy.nodes().filter(n => String(n.data("label")||"").toUpperCase().includes(qUpper)).slice(0,1);
   }
+  cy.nodes().forEach(n => n.data("isQuery", "false"));
   if(qNode && qNode.length){
     qNode.data("isQuery", "true");
   }
+
   runLayout();
   cy.fit(undefined, 30);
+  updateNetworkAnalytics();
 }
 
 function runLayout(){
@@ -1041,18 +1293,21 @@ function clearSelection(){
   cy.nodes().removeClass("selected");
   cy.edges().removeClass("selected");
   app.state.string.selectedNode = null;
-  app.state.string.selectedEdgeScore = null;
+  app.state.string.selectedEdge = null;
   $("#selNode").textContent = "—";
   $("#selEdge").textContent = "—";
+  updateSelectionDetails();
 }
 
 function selectNode(node){
   if(!cy) return;
   cy.nodes().removeClass("selected");
   node.addClass("selected");
-  app.state.string.selectedNode = { id: node.id(), label: node.data("label") };
+  app.state.string.selectedNode = { id: node.id(), label: node.data("label") || node.id() };
+  app.state.string.selectedEdge = null;
   $("#selNode").textContent = node.data("label") || node.id();
   $("#selEdge").textContent = "—";
+  updateSelectionDetails();
   // Load node pathways mapping lazily
   loadNodePathways(node.data("label") || node.id()).catch(err => {
     $("#nodePathways").innerHTML = `<div class="tiny" style="color: var(--warn);">Node mapping failed: ${escapeHtml(err.message)}</div>`;
@@ -1064,17 +1319,31 @@ function selectEdge(edge){
   cy.edges().removeClass("selected");
   edge.addClass("selected");
   const s = Number(edge.data("score") || 0);
-  app.state.string.selectedEdgeScore = s;
+  const src = edge.source().id();
+  const tgt = edge.target().id();
+  const srcLabel = edge.source().data("label") || src;
+  const tgtLabel = edge.target().data("label") || tgt;
+
+  const channels = {};
+  for(const k of ["nscore","fscore","pscore","ascore","escore","dscore","tscore"]){
+    if(edge.data(k) !== undefined) channels[k] = Number(edge.data(k) || 0);
+  }
+
+  app.state.string.selectedEdge = { source: src, target: tgt, sourceLabel: srcLabel, targetLabel: tgtLabel, score: s, channels };
+  app.state.string.selectedNode = null;
+
   $("#selEdge").textContent = isFinite(s) ? s.toFixed(3) : "—";
+  $("#selNode").textContent = "—";
+  updateSelectionDetails();
 }
 
 function highlightNodesBySet(labelOrIdSet){
-  if(!cy) return;
+  if(!cy) return 0;
   cy.nodes().removeClass("inPathway");
   let count = 0;
   cy.nodes().forEach(n => {
-    const label = (n.data("label") || "").toUpperCase();
-    const id = (n.id() || "").toUpperCase();
+    const label = String(n.data("label") || "").toUpperCase();
+    const id = String(n.id() || "").toUpperCase();
     if(labelOrIdSet.has(label) || labelOrIdSet.has(id)){
       n.addClass("inPathway");
       count += 1;
@@ -1083,12 +1352,190 @@ function highlightNodesBySet(labelOrIdSet){
   return count;
 }
 
+function countComponents(){
+  if(!cy) return 0;
+  const visited = new Set();
+  let comps = 0;
+  cy.nodes().forEach(n => {
+    if(visited.has(n.id())) return;
+    comps += 1;
+    const stack = [n];
+    visited.add(n.id());
+    while(stack.length){
+      const cur = stack.pop();
+      cur.neighborhood("node").forEach(nb => {
+        if(!visited.has(nb.id())){
+          visited.add(nb.id());
+          stack.push(nb);
+        }
+      });
+    }
+  });
+  return comps;
+}
+
+function updateNetworkAnalytics(){
+  if(!cy){
+    $("#hubList").innerHTML = `<div class="item"><div class="meta">Load a network to compute hub nodes.</div></div>`;
+    return;
+  }
+  const N = cy.nodes().length;
+  const E = cy.edges().length;
+  const density = (N > 1) ? (2*E)/(N*(N-1)) : 0;
+  const avgDeg = (N > 0) ? (2*E)/N : 0;
+  const comps = countComponents();
+
+  // quick metric widgets
+  $("#mDensity").textContent = (N > 1) ? density.toFixed(3) : "—";
+
+  // network stats box (append density)
+  const netStats = $("#netStats");
+  if(netStats){
+    netStats.innerHTML = `
+      <div class="kv">
+        <div class="k">Nodes</div><div class="v mono">${N}</div>
+        <div class="k">Edges</div><div class="v mono">${E}</div>
+        <div class="k">Density</div><div class="v mono">${(N>1)?density.toFixed(3):"—"}</div>
+        <div class="k">Avg degree</div><div class="v mono">${(N>0)?avgDeg.toFixed(2):"—"}</div>
+        <div class="k">Components</div><div class="v mono">${comps}</div>
+        <div class="k">Score ≥</div><div class="v mono">${app.state.string.requiredScore}</div>
+        <div class="k">Neighbors</div><div class="v mono">${app.state.string.neighbors}</div>
+        <div class="k">Type</div><div class="v mono">${escapeHtml(app.state.string.networkType)}</div>
+      </div>
+      <div class="tiny muted" style="margin-top:8px;">
+        Tip: click nodes to see Node→Pathways (sidebar) and edges for evidence channels.
+      </div>
+    `;
+  }
+
+  // hubs
+  const hubs = cy.nodes().map(n => ({
+    id: n.id(),
+    label: n.data("label") || n.id(),
+    degree: n.connectedEdges().length
+  })).sort((a,b) => b.degree - a.degree);
+
+  app.state.string.hubs = hubs.slice(0, 25);
+
+  const hubList = $("#hubList");
+  if(hubList){
+    hubList.innerHTML = "";
+    const top = hubs.slice(0, 12);
+    if(!top.length){
+      hubList.innerHTML = `<div class="item"><div class="meta">No nodes.</div></div>`;
+    }else{
+      for(const h of top){
+        const el = document.createElement("div");
+        el.className = "item";
+        el.innerHTML = `
+          <div class="title">${escapeHtml(h.label)} <span class="badge mono">deg ${h.degree}</span></div>
+          <div class="meta"><code>${escapeHtml(h.id)}</code></div>
+        `;
+        el.addEventListener("click", () => focusNodeByLabel(String(h.label).toUpperCase(), String(h.id).toUpperCase()));
+        hubList.appendChild(el);
+      }
+    }
+  }
+
+  refreshReport();
+}
+
+function updateSelectionDetails(){
+  const el = $("#selDetails");
+  if(!el) return;
+
+  if(app.state.string.selectedEdge){
+    const e = app.state.string.selectedEdge;
+    const s = isFinite(e.score) ? e.score : 0;
+    const channelPairs = Object.entries(e.channels || {})
+      .map(([k,v]) => [k, Number(v||0)])
+      .filter(([k,v]) => Number.isFinite(v) && v > 0.01)
+      .sort((a,b)=>b[1]-a[1]);
+
+    const channelHtml = channelPairs.length
+      ? channelPairs.map(([k,v]) => {
+          const pct = Math.max(2, Math.min(100, Math.round(v*100)));
+          const label = k.replace("score","").toUpperCase();
+          return `<div class="tiny" style="display:flex; gap:10px; align-items:center; margin:6px 0;">
+            <div class="mono" style="min-width: 38px; color: rgba(255,255,255,0.70);">${label}</div>
+            <div style="flex:1; height:8px; border-radius:999px; background: rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.10); overflow:hidden;">
+              <div style="height:100%; width:${pct}%; background: rgba(179,122,255,0.85);"></div>
+            </div>
+            <div class="mono" style="min-width: 48px; text-align:right; color: rgba(255,255,255,0.75);">${v.toFixed(2)}</div>
+          </div>`;
+        }).join("")
+      : `<div class="tiny muted">No per-channel scores returned by API for this edge.</div>`;
+
+    el.innerHTML = `
+      <div class="kv">
+        <div class="k">Edge</div><div class="v">${escapeHtml(e.sourceLabel)} ↔ ${escapeHtml(e.targetLabel)}</div>
+        <div class="k">Score</div><div class="v mono">${s.toFixed(3)}</div>
+      </div>
+      <div class="tiny muted" style="margin-top:10px;">Evidence channels (relative; 0..1):</div>
+      ${channelHtml}
+    `;
+    return;
+  }
+
+  if(app.state.string.selectedNode && cy){
+    const nId = app.state.string.selectedNode.id;
+    const n = cy.getElementById(nId);
+    const label = app.state.string.selectedNode.label;
+
+    const degree = n.connectedEdges().length;
+    const neighbors = n.connectedEdges().map(e => {
+      const other = (e.source().id() === nId) ? e.target() : e.source();
+      const otherLabel = other.data("label") || other.id();
+      const sc = Number(e.data("score")||0);
+      return { otherLabel, otherId: other.id(), score: sc };
+    }).sort((a,b)=>b.score-a.score).slice(0, 8);
+
+    const neighHtml = neighbors.length ? neighbors.map(x => `
+      <div class="tiny" style="margin: 6px 0;">
+        <span class="mono">${escapeHtml(x.otherLabel)}</span>
+        <span class="faint mono"> (${escapeHtml(x.otherId)})</span>
+        <span class="badge mono" style="margin-left:6px;">${x.score.toFixed(3)}</span>
+      </div>
+    `).join("") : `<div class="tiny muted">No neighbors.</div>`;
+
+    el.innerHTML = `
+      <div class="kv">
+        <div class="k">Node</div><div class="v">${escapeHtml(label)}</div>
+        <div class="k">ID</div><div class="v mono">${escapeHtml(nId)}</div>
+        <div class="k">Degree</div><div class="v mono">${degree}</div>
+      </div>
+      <div class="tiny muted" style="margin-top:10px;">Top neighbors by score:</div>
+      ${neighHtml}
+    `;
+    return;
+  }
+
+  el.textContent = "Click a node or edge to see evidence + quick metrics.";
+}
+
+function focusNodeByLabel(labelUpper, idUpper=""){
+  if(!cy) return;
+  const nodes = cy.nodes().filter(n =>
+    String(n.data("label")||"").toUpperCase() === labelUpper ||
+    (idUpper && String(n.id()||"").toUpperCase() === idUpper) ||
+    String(n.id()||"").toUpperCase() === labelUpper
+  );
+  if(nodes.length){
+    const n = nodes[0];
+    cy.nodes().removeClass("selected");
+    n.addClass("selected");
+    cy.center(n);
+    cy.fit(n, 80);
+    selectNode(n);
+  }else{
+    setStatus("Couldn't find that node in the network.", "warn");
+  }
+}
+
 // ------- Feature track -------
 function hashHue(str){
   let h = 0;
-  for(let i=0;i<str.length;i++){
-    h = (h * 31 + str.charCodeAt(i)) >>> 0;
-  }
+  for(let i=0;i<str.length;i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
   return h % 360;
 }
 
@@ -1099,13 +1546,26 @@ function featureCategory(type){
   return "other";
 }
 
+function segmentsToRects(segments, seqLen, y, h, fill, label){
+  const rects = [];
+  for(const seg of segments){
+    const x1 = 20 + (960 * (seg[0]-1) / Math.max(1, seqLen));
+    const x2 = 20 + (960 * (seg[1]-1) / Math.max(1, seqLen));
+    const w = Math.max(2, x2 - x1);
+    rects.push(`<rect x="${x1.toFixed(2)}" y="${y}" width="${w.toFixed(2)}" height="${h}" rx="3" ry="3"
+      fill="${fill}" stroke="rgba(255,255,255,0.10)" stroke-width="1"
+      data-desc="${escapeHtml(label)} ${seg[0]}-${seg[1]}"></rect>`);
+  }
+  return rects.join("\n");
+}
+
 function renderFeatures(features, seqLen, filterMode="all", textFilter=""){
   const svg = $("#featureSvg");
   const list = $("#featList");
   const featCount = $("#featCount");
   const q = textFilter.trim().toLowerCase();
 
-  const filtered = features.filter(f => {
+  const filtered = (features || []).filter(f => {
     if(filterMode === "domains" && featureCategory(f.type) !== "domains") return false;
     if(filterMode === "sites" && featureCategory(f.type) !== "sites") return false;
     if(q){
@@ -1117,7 +1577,7 @@ function renderFeatures(features, seqLen, filterMode="all", textFilter=""){
 
   featCount.textContent = String(filtered.length);
 
-  // Build list
+  // list
   list.innerHTML = "";
   for(const f of filtered.slice(0, 800)){
     const el = document.createElement("div");
@@ -1139,8 +1599,7 @@ function renderFeatures(features, seqLen, filterMode="all", textFilter=""){
     list.appendChild(el);
   }
 
-  // Draw track
-  // Simple row packing: place features in first row that doesn't overlap.
+  // draw SVG
   const rows = [];
   const placements = [];
   for(const f of filtered){
@@ -1156,10 +1615,7 @@ function renderFeatures(features, seqLen, filterMode="all", textFilter=""){
         break;
       }
       rowIndex += 1;
-      if(rowIndex > 8){
-        // too many rows, skip additional to keep SVG readable
-        break;
-      }
+      if(rowIndex > 8) break;
     }
   }
 
@@ -1169,6 +1625,7 @@ function renderFeatures(features, seqLen, filterMode="all", textFilter=""){
   const trackH = 150;
 
   svg.innerHTML = "";
+
   // baseline
   svg.insertAdjacentHTML("beforeend", `
     <rect x="0" y="0" width="1000" height="${trackH}" fill="rgba(255,255,255,0.00)"></rect>
@@ -1182,6 +1639,19 @@ function renderFeatures(features, seqLen, filterMode="all", textFilter=""){
   for(let i=1;i<ticks;i++){
     const x = 20 + (960 * i / ticks);
     svg.insertAdjacentHTML("beforeend", `<line x1="${x}" y1="${topPad-4}" x2="${x}" y2="${topPad+6}" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>`);
+  }
+
+  // AlphaFold pLDDT overlays (innovative cross-view linkage)
+  const seg50 = app.state.alphafold?.segments50 || [];
+  const seg70 = app.state.alphafold?.segments70 || [];
+  if(seg70.length){
+    svg.insertAdjacentHTML("beforeend", segmentsToRects(seg70, seqLen, topPad-12, 6, "rgba(255,204,102,0.18)", "pLDDT<70"));
+  }
+  if(seg50.length){
+    svg.insertAdjacentHTML("beforeend", segmentsToRects(seg50, seqLen, topPad-12, 6, "rgba(255,92,92,0.22)", "pLDDT<50"));
+  }
+  if(seg50.length || seg70.length){
+    svg.insertAdjacentHTML("beforeend", `<text x="20" y="${topPad-16}" fill="rgba(255,255,255,0.55)" font-size="10">AlphaFold confidence overlay: <tspan fill="rgba(255,204,102,0.70)">pLDDT&lt;70</tspan>, <tspan fill="rgba(255,92,92,0.70)">pLDDT&lt;50</tspan></text>`);
   }
 
   // features
@@ -1207,19 +1677,15 @@ function renderFeatures(features, seqLen, filterMode="all", textFilter=""){
     `);
   }
 
-  // Tooltip
-  const tip = $("#tooltip");
+  // Tooltips for track features
   svg.querySelectorAll("rect[id^='feat_']").forEach(r => {
     r.addEventListener("mousemove", (e) => {
-      tip.style.display = "block";
       const type = r.getAttribute("data-type") || "";
       const desc = r.getAttribute("data-desc") || "";
       const range = r.getAttribute("data-range") || "";
-      tip.innerHTML = `<div class="t">${type} <span class="badge mono">${range}</span></div><div>${desc}</div><div class="m">Click to jump to sequence</div>`;
-      tip.style.left = (e.clientX + 12) + "px";
-      tip.style.top = (e.clientY + 12) + "px";
+      showTip(`<div class="t">${type} <span class="badge mono">${range}</span></div><div>${desc}</div><div class="m">Click to jump to sequence</div>`, e.clientX, e.clientY);
     });
-    r.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+    r.addEventListener("mouseleave", () => hideTip());
     r.addEventListener("click", () => {
       const range = (r.getAttribute("data-range") || "").split("-").map(x => Number(x));
       if(range.length === 2 && range[0] && range[1]){
@@ -1234,17 +1700,12 @@ function flashFeatureInSvg(f){
   const id = `feat_${f.type}_${f.start}_${f.end}`.replaceAll(/[^a-zA-Z0-9_]/g, "_");
   const el = svg.querySelector("#" + CSS.escape(id));
   if(!el) return;
-  el.animate([
-    { filter: "brightness(1)" },
-    { filter: "brightness(1.6)" },
-    { filter: "brightness(1)" }
-  ], { duration: 550 });
+  el.animate([{ filter: "brightness(1)" }, { filter: "brightness(1.6)" }, { filter: "brightness(1)" }], { duration: 550 });
 }
 
 function focusSequenceWindow(start, end){
-  const seq = app.state.uniprot?.sequence?.value || app.state.uniprot?.sequenceValue || app.state.uniprotSeq || app.state.uniprotSummary?.seq || "";
+  const seq = app.state.uniprotSummary?.seq || "";
   if(!seq) return;
-
   const pad = 40;
   const s = Math.max(1, start - pad);
   const e = Math.min(seq.length, end + pad);
@@ -1254,8 +1715,6 @@ function focusSequenceWindow(start, end){
   const formatted = slice.replace(/(.{1,60})/g, "$1\n");
   $("#seq").textContent = header + formatted;
   $("#seqRange").textContent = `${s}-${e}`;
-
-  // Scroll to top to show header
   $("#seq").scrollTop = 0;
 }
 
@@ -1264,7 +1723,7 @@ function renderReactomeList(items){
   const list = $("#pathList");
   const count = $("#pathCount");
   const filter = $("#pathFilter").value.trim().toLowerCase();
-  const filtered = items.filter(p => {
+  const filtered = (items || []).filter(p => {
     if(!filter) return true;
     const hay = `${p.displayName || ""} ${p.stId || ""} ${p.speciesName || ""}`.toLowerCase();
     return hay.includes(filter);
@@ -1321,21 +1780,20 @@ function renderParticipants(participants){
   const list = $("#partList");
   const count = $("#partCount");
   const filter = $("#partFilter").value.trim().toLowerCase();
-  const filtered = participants.filter(p => {
+  const filtered = (participants || []).filter(p => {
     if(!filter) return true;
-    const hay = `${p.identifier || ""} ${p.name || ""} ${p.databaseName || ""}`.toLowerCase();
+    const hay = `${p.identifier || ""} ${p.name || ""} ${p.databaseName || ""} ${p.displayName || ""}`.toLowerCase();
     return hay.includes(filter);
   });
 
   count.textContent = `${filtered.length} refs`;
   list.innerHTML = "";
 
-  // Build highlight set (uppercased identifiers and names)
+  // Build highlight set
   const set = new Set();
   for(const p of filtered){
     if(p.identifier) set.add(String(p.identifier).toUpperCase());
     if(p.name) set.add(String(p.name).toUpperCase());
-    // some have displayName like "UniProt:P01834 IGKC"
     if(p.displayName){
       const parts = String(p.displayName).split(" ");
       for(const part of parts){
@@ -1360,9 +1818,8 @@ function renderParticipants(participants){
       <div class="meta">${meta}</div>
     `;
     el.addEventListener("click", () => {
-      // try to focus on this participant node if present in the network
       const target = (p.name || p.identifier || "").toUpperCase();
-      focusNodeByLabel(target);
+      focusNodeByLabel(target, target);
     });
     list.appendChild(el);
   }
@@ -1374,19 +1831,6 @@ function renderParticipants(participants){
   }
 
   $("#partHint").textContent = `Loaded ${filtered.length} reference entities. Click “Highlight in network” to mark overlaps.`;
-}
-
-function focusNodeByLabel(labelUpper){
-  if(!cy || !labelUpper) return;
-  const nodes = cy.nodes().filter(n => String(n.data("label") || "").toUpperCase() === labelUpper || String(n.id() || "").toUpperCase() === labelUpper);
-  if(nodes.length){
-    cy.nodes().removeClass("selected");
-    const n = nodes[0];
-    n.addClass("selected");
-    cy.center(n);
-    cy.fit(n, 80);
-    selectNode(n);
-  }
 }
 
 // ------- Node → Pathways (lazy) -------
@@ -1403,13 +1847,13 @@ async function loadNodePathways(nodeLabelOrId){
     return;
   }
 
-  // Try Reactome mapping directly using the label (Reactome accepts some UniProt identifiers & gene names).
+  // Attempt direct mapping (Reactome accepts some IDs/names)
   let data = null;
   try{
     data = await reactomeMapping("UniProt", nodeLabelOrId, "pathways", app.state.taxId);
-  }catch{ /* ignore */ }
+  }catch{}
 
-  // If empty, attempt to map gene → UniProt accession via UniProt search, then map again.
+  // fallback: gene -> UniProt -> Reactome
   if(!Array.isArray(data) || data.length === 0){
     try{
       const search = await uniprotSearch(nodeLabelOrId, app.state.taxId, 3);
@@ -1418,7 +1862,7 @@ async function loadNodePathways(nodeLabelOrId){
       if(acc){
         data = await reactomeMapping("UniProt", acc, "pathways", app.state.taxId);
       }
-    }catch{ /* ignore */ }
+    }catch{}
   }
 
   data = Array.isArray(data) ? data : [];
@@ -1434,8 +1878,9 @@ function renderNodePathways(nodeLabelOrId, pathways){
   const top = pathways.slice(0, 8).map(p => {
     const name = escapeHtml(p.displayName || "—");
     const id = escapeHtml(p.stId || p.stIdVersion || p.dbId || "");
+    const link = reactomeEventLink(p.stId || p.stIdVersion || p.dbId);
     return `<div class="tiny" style="margin: 6px 0;">
-      <a href="${reactomeEventLink(p.stId || p.stIdVersion || p.dbId)}" target="_blank" rel="noopener">${name}</a>
+      <a href="${link}" target="_blank" rel="noopener">${name}</a>
       <span class="faint mono"> (${id})</span>
     </div>`;
   }).join("");
@@ -1448,45 +1893,110 @@ let viewer3d = null;
 
 function init3D(){
   const el = $("#viewer3d");
-  // Create once; 3Dmol attaches to element.
   viewer3d = $3Dmol.createViewer(el, { backgroundColor: "rgba(0,0,0,0)" });
+}
+
+function parsePdbPlddt(pdbText){
+  const map = new Map(); // resSeq -> [b]
+  const lines = pdbText.split(/\r?\n/);
+  for(const line of lines){
+    if(!line.startsWith("ATOM")) continue;
+    // PDB columns: resSeq 23-26, B-factor 61-66
+    const resSeqStr = line.slice(22, 26).trim();
+    const bStr = line.slice(60, 66).trim();
+    const res = parseInt(resSeqStr, 10);
+    const b = parseFloat(bStr);
+    if(!Number.isFinite(res) || !Number.isFinite(b)) continue;
+    if(!map.has(res)) map.set(res, []);
+    map.get(res).push(b);
+  }
+  const keys = Array.from(map.keys());
+  if(!keys.length) return null;
+  const maxRes = Math.max(...keys);
+  const perRes = new Array(maxRes + 1).fill(null);
+  for(const [res, arr] of map.entries()){
+    const avg = arr.reduce((a,c)=>a+c,0) / Math.max(1, arr.length);
+    perRes[res] = avg;
+  }
+  const vals = perRes.filter(v => v !== null);
+  const mean = vals.reduce((a,c)=>a+c,0) / Math.max(1, vals.length);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+
+  function segmentsBelow(thr, minLen=5){
+    const segs = [];
+    let start = null;
+    for(let i=1;i<perRes.length;i++){
+      const v = perRes[i];
+      const bad = (v !== null && v < thr);
+      if(bad && start === null) start = i;
+      if(!bad && start !== null){
+        const end = i-1;
+        if(end - start + 1 >= minLen) segs.push([start, end]);
+        start = null;
+      }
+    }
+    if(start !== null){
+      const end = perRes.length - 1;
+      if(end - start + 1 >= minLen) segs.push([start, end]);
+    }
+    return segs;
+  }
+
+  const below50 = vals.filter(v => v < 50).length;
+  const below70 = vals.filter(v => v < 70).length;
+  const fracBelow50 = below50 / Math.max(1, vals.length);
+  const fracBelow70 = below70 / Math.max(1, vals.length);
+
+  return {
+    maxRes,
+    perRes,
+    mean, min, max,
+    fracBelow50,
+    fracBelow70,
+    segments50: segmentsBelow(50, 5),
+    segments70: segmentsBelow(70, 5)
+  };
+}
+
+function renderStructureFromPdb(pdb){
+  if(!viewer3d) init3D();
+  viewer3d.clear();
+  viewer3d.addModel(pdb, "pdb");
+  // AlphaFold encodes pLDDT in B-factor; color by b
+  viewer3d.setStyle({}, { cartoon: { colorscheme: { prop: "b", gradient: "roygb", min: 0, max: 100 } } });
+  viewer3d.zoomTo();
+  viewer3d.render();
 }
 
 async function loadAlphaFold(acc){
   setPill("#dotAF", "#stAF", "loading…", "warn");
   $("#afMeta").textContent = "Loading AlphaFold metadata…";
   $("#afPae").textContent = "Loading…";
+
   try{
     const url = `https://alphafold.ebi.ac.uk/api/prediction/${encodeURIComponent(acc)}`;
     const data = await fetchJsonCached(url, {}, 24 * 60 * 60 * 1000);
     const first = Array.isArray(data) && data.length ? data[0] : null;
+
     if(!first){
-      app.state.alphafold = { meta: null, pdbUrl: null, paeImageUrl: null };
+      app.state.alphafold = { meta: null, pdbUrl: null, paeImageUrl: null, plddt: null, plddtSummary: null, segments50: [], segments70: [] };
       $("#afMeta").textContent = "No AlphaFold prediction found for this UniProt accession.";
       $("#afPae").textContent = "—";
-      setPill("#dotAF", "#stAF", "none", "warn");
       $("#mAF").textContent = "none";
-      clear3D();
+      $("#mPlddt").textContent = "—";
+      setPill("#dotAF", "#stAF", "none", "warn");
+      if(viewer3d) { viewer3d.clear(); viewer3d.render(); }
       return;
     }
+
     app.state.alphafold.meta = first;
-    app.state.alphafold.pdbUrl = first.pdbUrl || first.pdbUrl?.[0] || null;
+    app.state.alphafold.pdbUrl = first.pdbUrl || null;
     app.state.alphafold.paeImageUrl = first.paeImageUrl || null;
 
     $("#mAF").textContent = app.state.alphafold.pdbUrl ? "yes" : "metadata only";
 
-    // Render meta
-    const metaLines = [];
-    metaLines.push(`<div class="kv">`);
-    metaLines.push(`<div class="k">model</div><div class="v mono">${escapeHtml(first.modelEntityId || "—")}</div>`);
-    metaLines.push(`<div class="k">created</div><div class="v mono">${escapeHtml(first.modelCreatedDate || "—")}</div>`);
-    metaLines.push(`<div class="k">global metric</div><div class="v mono">${escapeHtml(first.globalMetricValue ?? "—")}</div>`);
-    metaLines.push(`<div class="k">pdb</div><div class="v">${first.pdbUrl ? `<a href="${escapeHtml(first.pdbUrl)}" target="_blank" rel="noopener">Download PDB</a>` : "—"}</div>`);
-    metaLines.push(`<div class="k">cif</div><div class="v">${first.cifUrl ? `<a href="${escapeHtml(first.cifUrl)}" target="_blank" rel="noopener">Download mmCIF</a>` : "—"}</div>`);
-    metaLines.push(`</div>`);
-    $("#afMeta").innerHTML = metaLines.join("");
-
-    // Render PAE image if present
+    // PAE image
     if(first.paeImageUrl){
       $("#afPae").innerHTML = `<a href="${escapeHtml(first.paeImageUrl)}" target="_blank" rel="noopener">
         <img src="${escapeHtml(first.paeImageUrl)}" alt="PAE" style="width:100%; border-radius:12px; border:1px solid var(--border);"/>
@@ -1495,49 +2005,75 @@ async function loadAlphaFold(acc){
       $("#afPae").textContent = "PAE image URL not provided by API for this entry.";
     }
 
-    // Load structure in 3D viewer
-    if(!viewer3d) init3D();
-    await renderStructureFromPdbUrl(first.pdbUrl);
+    // PDB fetch + parse pLDDT
+    let plddtStats = null;
+    if(first.pdbUrl){
+      const pdb = await fetchText(first.pdbUrl);
+      renderStructureFromPdb(pdb);
+      plddtStats = parsePdbPlddt(pdb);
+      if(plddtStats){
+        app.state.alphafold.plddt = plddtStats.perRes;
+        app.state.alphafold.plddtSummary = plddtStats;
+        app.state.alphafold.segments50 = plddtStats.segments50;
+        app.state.alphafold.segments70 = plddtStats.segments70;
+        $("#mPlddt").textContent = plddtStats.mean.toFixed(1);
+      }else{
+        $("#mPlddt").textContent = "—";
+      }
+    }else{
+      if(viewer3d) { viewer3d.clear(); viewer3d.render(); }
+      $("#mPlddt").textContent = "—";
+    }
+
+    // Meta panel (include pLDDT)
+    const metaLines = [];
+    metaLines.push(`<div class="kv">`);
+    metaLines.push(`<div class="k">model</div><div class="v mono">${escapeHtml(first.modelEntityId || "—")}</div>`);
+    metaLines.push(`<div class="k">created</div><div class="v mono">${escapeHtml(first.modelCreatedDate || "—")}</div>`);
+    metaLines.push(`<div class="k">global metric</div><div class="v mono">${escapeHtml(first.globalMetricValue ?? "—")}</div>`);
+    metaLines.push(`<div class="k">pdb</div><div class="v">${first.pdbUrl ? `<a href="${escapeHtml(first.pdbUrl)}" target="_blank" rel="noopener">Download PDB</a>` : "—"}</div>`);
+    metaLines.push(`<div class="k">cif</div><div class="v">${first.cifUrl ? `<a href="${escapeHtml(first.cifUrl)}" target="_blank" rel="noopener">Download mmCIF</a>` : "—"}</div>`);
+
+    if(plddtStats){
+      metaLines.push(`<div class="k">mean pLDDT</div><div class="v mono">${plddtStats.mean.toFixed(1)}</div>`);
+      metaLines.push(`<div class="k">&lt;70</div><div class="v mono">${Math.round(plddtStats.fracBelow70*100)}%</div>`);
+      metaLines.push(`<div class="k">&lt;50</div><div class="v mono">${Math.round(plddtStats.fracBelow50*100)}%</div>`);
+    }
+    metaLines.push(`</div>`);
+
+    if(plddtStats){
+      const segText = (segs) => segs.length ? segs.slice(0, 6).map(s => `${s[0]}-${s[1]}`).join(", ") + (segs.length>6 ? ", …" : "") : "none";
+      metaLines.push(`<div class="tiny muted" style="margin-top:10px;">
+        Low-confidence segments (min 5 aa):<br/>
+        <span class="mono">pLDDT&lt;70:</span> ${escapeHtml(segText(plddtStats.segments70))}<br/>
+        <span class="mono">pLDDT&lt;50:</span> ${escapeHtml(segText(plddtStats.segments50))}
+      </div>`);
+    }
+
+    $("#afMeta").innerHTML = metaLines.join("");
+
+    // Re-render feature track to include pLDDT overlays
+    const seqLen = app.state.uniprotSummary?.len || (app.state.uniprotSummary?.seq?.length || 1);
+    renderFeatures(app.state.features || [], seqLen, featMode, $("#featFilter").value);
+
     setPill("#dotAF", "#stAF", "ready", "ok");
-    setStatus("AlphaFold structure loaded.", "ok");
+    setStatus("AlphaFold loaded (structure + confidence).", "ok");
+    refreshReport();
   }catch(err){
     $("#afMeta").innerHTML = `<div class="tiny" style="color: var(--warn);">AlphaFold fetch failed: ${escapeHtml(err.message)}</div>`;
     $("#afPae").textContent = "—";
-    setPill("#dotAF", "#stAF", "error", "bad");
     $("#mAF").textContent = "error";
-    clear3D();
+    $("#mPlddt").textContent = "—";
+    setPill("#dotAF", "#stAF", "error", "bad");
+    if(viewer3d) { viewer3d.clear(); viewer3d.render(); }
   }
-}
-
-async function renderStructureFromPdbUrl(pdbUrl){
-  if(!viewer3d) init3D();
-  viewer3d.clear();
-  if(!pdbUrl){
-    viewer3d.render();
-    return;
-  }
-  const pdb = await fetchText(pdbUrl);
-  viewer3d.addModel(pdb, "pdb");
-
-  // AlphaFold encodes pLDDT in B-factor; color by b
-  viewer3d.setStyle({}, { cartoon: { colorscheme: { prop: "b", gradient: "roygb", min: 0, max: 100 } } });
-  viewer3d.zoomTo();
-  viewer3d.render();
-}
-
-function clear3D(){
-  try{
-    if(viewer3d){
-      viewer3d.clear();
-      viewer3d.render();
-    }
-  }catch{}
 }
 
 // ------- Report generation -------
 function buildReport(){
   const s = app.state.uniprotSummary;
   if(!s) return "# BioExplorer Report\n\nNo protein loaded.\n";
+
   const acc = s.acc || "—";
   const gene = (s.genes && s.genes.length) ? s.genes[0] : "—";
   const name = s.proteinName || "—";
@@ -1547,14 +2083,25 @@ function buildReport(){
 
   const pathways = app.state.reactome.items || [];
   const topPaths = pathways.slice(0, 10).map(p => `- ${p.displayName || "—"} (${p.stId || p.dbId || ""})`).join("\n");
+
   const net = app.state.string.elements;
   const nNodes = net ? net.nodes.length : 0;
   const nEdges = net ? net.edges.length : 0;
+  const density = (cy && cy.nodes().length>1) ? (2*cy.edges().length)/(cy.nodes().length*(cy.nodes().length-1)) : null;
+
+  const hubs = (app.state.string.hubs || []).slice(0, 10).map(h => `- ${h.label} (deg ${h.degree})`).join("\n");
 
   const af = app.state.alphafold;
+  const plddt = af?.plddtSummary;
   const afLine = af?.pdbUrl ? `AlphaFold model: ${af.meta?.modelEntityId || "available"} (${af.pdbUrl})` : "AlphaFold model: not available / not loaded";
+  const plddtLines = plddt ? `
+- **mean pLDDT:** ${plddt.mean.toFixed(1)}
+- **% <70:** ${Math.round(plddt.fracBelow70*100)}%
+- **% <50:** ${Math.round(plddt.fracBelow50*100)}%
+- **segments <50 (min 5 aa):** ${plddt.segments50.length ? plddt.segments50.slice(0,8).map(s=>`${s[0]}-${s[1]}`).join(", ") : "none"}
+` : "";
 
-  const report = `# BioExplorer Report — ${gene} (${acc})
+  return `# BioExplorer Report — ${gene} (${acc})
 
 ## Summary
 - **Protein:** ${name}
@@ -1568,7 +2115,10 @@ ${fn ? "### UniProt Function\n" + fn + "\n" : ""}
 ## STRING network
 - **Nodes:** ${nNodes}
 - **Edges:** ${nEdges}
+- **Density:** ${density !== null ? density.toFixed(3) : "—"}
 - **Parameters:** required_score=${app.state.string.requiredScore}, neighbors=${app.state.string.neighbors}, network_type=${app.state.string.networkType}
+
+${hubs ? "### Top hubs\n" + hubs + "\n" : ""}
 
 ## Reactome mapping
 - **Mode:** ${app.state.reactome.mode}
@@ -1577,22 +2127,53 @@ ${topPaths ? "\n### Top mapped events\n" + topPaths + "\n" : ""}
 
 ## Structure
 - ${afLine}
+${plddtLines ? "\n### Confidence (AlphaFold pLDDT)\n" + plddtLines + "\n" : ""}
 
 ## Next steps / ideas (non-AI heuristics)
 - Compare **Reactome participants** vs **STRING neighborhood** to find missing edges (data gaps).
-- Check if **features/domains** overlap with **low-confidence** regions in AlphaFold (potential disorder/IDRs).
-- Pick 1–2 high-connectivity nodes and design perturbations (CRISPRi/CRISPRa, inhibitors, degrons) and readouts (reporters, phospho-western, RNA-seq).
+- Check if **features/domains** overlap with **low-confidence** regions (possible IDRs, flexible linkers).
+- Pick 1–2 high-connectivity nodes and design perturbations; validate with pathway readouts.
 
 ---
 Generated by Kai9987kai BioExplorer (single-file web app).
 `;
-  return report;
 }
 
 function refreshReport(){
   const report = buildReport();
   app.state.report = report;
   $("#reportText").value = report;
+}
+
+// ------- Reactome mapping for current protein -------
+async function loadReactomeForCurrent(mode){
+  if(!app.state.uniprotSummary) return;
+  app.state.reactome.mode = mode;
+  setPill("#dotReactome", "#stReactome", "loading…", "warn");
+  $("#pathList").innerHTML = "";
+  $("#partList").innerHTML = "";
+  $("#pathCount").textContent = "0";
+  $("#mReactome").textContent = "—";
+
+  try{
+    const acc = app.state.uniprotSummary.acc;
+    const gene = app.state.uniprotSummary.genes?.[0] || acc;
+
+    let items = await reactomeMapping("UniProt", acc, mode, app.state.taxId);
+    if(!Array.isArray(items) || items.length === 0){
+      items = await reactomeMapping("UniProt", gene, mode, app.state.taxId);
+    }
+
+    app.state.reactome.items = Array.isArray(items) ? items : [];
+    $("#mReactome").textContent = String(app.state.reactome.items.length);
+    renderReactomeList(app.state.reactome.items);
+    setPill("#dotReactome", "#stReactome", "ready", "ok");
+    refreshReport();
+  }catch(err){
+    setPill("#dotReactome", "#stReactome", "error", "bad");
+    $("#pathList").innerHTML = `<div class="bd tiny" style="color: var(--warn); padding:10px;">Reactome mapping failed: ${escapeHtml(err.message)}</div>`;
+    $("#mReactome").textContent = "error";
+  }
 }
 
 // ------- Main loading pipeline -------
@@ -1609,6 +2190,7 @@ async function resolveAndLoad(){
   app.state.string.networkType = $("#nettype").value || "functional";
 
   updateHashFromState();
+  hideSuggestions();
   await loadProtein(raw);
 }
 
@@ -1623,11 +2205,16 @@ async function loadProtein(rawQuery){
   $("#partList").innerHTML = "";
   $("#netStats").textContent = "Loading…";
   $("#pathHighlightInfo").textContent = "Select a pathway in the Pathways tab to highlight its participants here.";
+  $("#hubList").innerHTML = `<div class="item"><div class="meta">Computing…</div></div>`;
+
+  // reset pLDDT overlays (will be added back if AlphaFold loads)
+  app.state.alphafold.segments50 = [];
+  app.state.alphafold.segments70 = [];
+  $("#mPlddt").textContent = "—";
 
   // UNI
   setPill("#dotUniprot", "#stUniprot", "loading…", "warn");
   let entry = null;
-  let summary = null;
 
   try{
     const taxId = app.state.taxId;
@@ -1638,30 +2225,27 @@ async function loadProtein(rawQuery){
       try{
         entry = await uniprotFetchEntry(baseAcc);
         acc = baseAcc;
-      }catch{
-        // fallback to search
-      }
+      }catch{}
     }
 
     if(!entry){
       const search = await uniprotSearch(rawQuery, taxId, 25);
       const best = pickBestUniProtResult(search);
-      if(!best){
-        throw new Error("No UniProtKB matches. Try a different query or species.");
-      }
+      if(!best) throw new Error("No UniProtKB matches. Try a different query or species.");
       acc = best.primaryAccession;
       entry = await uniprotFetchEntry(acc);
     }
 
     app.state.uniprotAcc = entry.primaryAccession || entry.uniProtkbId || acc;
     app.state.uniprot = entry;
-    summary = uniprotExtractSummary(entry);
+
+    const summary = uniprotExtractSummary(entry);
     app.state.uniprotSummary = summary;
 
     setPill("#dotUniprot", "#stUniprot", "ready", "ok");
     $("#badgeAcc").innerHTML = `Acc: <strong class="mono">${escapeHtml(summary.acc || "—")}</strong>`;
 
-    // Render summary panel
+    // summary panel
     $("#sumName").textContent = safeText(summary.proteinName);
     $("#sumGenes").textContent = summary.genes.length ? summary.genes.join(", ") + (summary.geneSyn.length ? ` (syn: ${summary.geneSyn.slice(0,6).join(", ")}${summary.geneSyn.length>6?", …":""})` : "") : "—";
     $("#sumOrg").textContent = `${summary.org}${summary.tax ? " (taxId " + summary.tax + ")" : ""}`;
@@ -1678,53 +2262,41 @@ async function loadProtein(rawQuery){
     return;
   }
 
-  // FEATURE + sequence
+  // Features + sequence
   try{
     const feats = uniprotExtractFeatures(app.state.uniprot);
     app.state.features = feats;
-    const seq = app.state.uniprot.sequence?.value || "";
+    const seq = app.state.uniprotSummary.seq || "";
     if(seq){
-      // default show first 200 aa
-      $("#seq").textContent = `>${summary.acc}|${summary.genes[0] || ""} ${summary.proteinName || ""}\n` + seq.slice(0, 200).replace(/(.{1,60})/g, "$1\n");
+      $("#seq").textContent = `>${app.state.uniprotSummary.acc}|${app.state.uniprotSummary.genes[0] || ""} ${app.state.uniprotSummary.proteinName || ""}\n` +
+        seq.slice(0, 200).replace(/(.{1,60})/g, "$1\n");
       $("#seqRange").textContent = `1-${Math.min(seq.length, 200)}`;
     }
-    renderFeatures(feats, summary.len || seq.length || 1, "all", "");
+    renderFeatures(feats, app.state.uniprotSummary.len || seq.length || 1, featMode, $("#featFilter").value);
     $("#mNodes").textContent = "—";
     $("#mEdges").textContent = "—";
+    $("#mDensity").textContent = "—";
   }catch(err){
-    // Non-fatal
     $("#featList").innerHTML = `<div class="bd tiny" style="color: var(--warn); padding:10px;">Feature render error: ${escapeHtml(err.message)}</div>`;
   }
 
   // STRING
   setPill("#dotString", "#stString", "loading…", "warn");
   try{
-    const geneForString = (summary.genes && summary.genes.length) ? summary.genes[0] : (summary.acc || rawQuery);
+    const geneForString = (app.state.uniprotSummary.genes && app.state.uniprotSummary.genes.length) ? app.state.uniprotSummary.genes[0] : (app.state.uniprotSummary.acc || rawQuery);
     const edges = await stringNetwork(geneForString, app.state.taxId, app.state.string.requiredScore, app.state.string.neighbors, app.state.string.networkType);
     const parsed = parseStringNetwork(edges);
-    // Mark central query label for styling
+
     const els = {
       nodes: parsed.nodes.map(n => ({ data: n.data })),
       edges: parsed.edges.map(e => ({ data: e.data }))
     };
     app.state.string.elements = els;
+
     buildCy([...els.nodes, ...els.edges], geneForString);
 
     $("#mNodes").textContent = String(els.nodes.length);
     $("#mEdges").textContent = String(els.edges.length);
-    $("#netStats").innerHTML = `
-      <div class="kv">
-        <div class="k">Query</div><div class="v mono">${escapeHtml(geneForString)}</div>
-        <div class="k">Nodes</div><div class="v mono">${els.nodes.length}</div>
-        <div class="k">Edges</div><div class="v mono">${els.edges.length}</div>
-        <div class="k">required_score</div><div class="v mono">${app.state.string.requiredScore}</div>
-        <div class="k">neighbors</div><div class="v mono">${app.state.string.neighbors}</div>
-        <div class="k">type</div><div class="v mono">${escapeHtml(app.state.string.networkType)}</div>
-      </div>
-      <div class="tiny muted" style="margin-top:8px;">
-        Tip: Click nodes → see Node→Pathways in the sidebar.
-      </div>
-    `;
 
     setPill("#dotString", "#stString", "ready", "ok");
   }catch(err){
@@ -1732,56 +2304,24 @@ async function loadProtein(rawQuery){
     $("#netStats").innerHTML = `<div class="tiny" style="color: var(--warn);">STRING error: ${escapeHtml(err.message)}</div>`;
     $("#mNodes").textContent = "error";
     $("#mEdges").textContent = "error";
+    $("#mDensity").textContent = "—";
+    $("#hubList").innerHTML = `<div class="item"><div class="meta">No hubs (network failed to load).</div></div>`;
   }
 
-  // REACTOME mapping (default: pathways)
-  await loadReactomeForCurrent("pathways");
+  // Reactome + AlphaFold in parallel (faster)
+  await Promise.allSettled([
+    loadReactomeForCurrent("pathways"),
+    loadAlphaFold(app.state.uniprotSummary.acc)
+  ]);
 
-  // ALPHAFOLD
-  await loadAlphaFold(summary.acc);
-
-  // REPORT
   refreshReport();
-
-  setStatus("Loaded. Explore tabs and click nodes/pathways to drill down.", "ok");
-}
-
-// Load Reactome mapping for current protein
-async function loadReactomeForCurrent(mode){
-  if(!app.state.uniprotSummary) return;
-  app.state.reactome.mode = mode;
-  setPill("#dotReactome", "#stReactome", "loading…", "warn");
-  $("#pathList").innerHTML = "";
-  $("#partList").innerHTML = "";
-  $("#pathCount").textContent = "0";
-  $("#mReactome").textContent = "—";
-
-  try{
-    const acc = app.state.uniprotSummary.acc;
-    const gene = app.state.uniprotSummary.genes?.[0] || acc;
-
-    // Prefer accession; if empty, try gene symbol.
-    let items = await reactomeMapping("UniProt", acc, mode, app.state.taxId);
-    if(!Array.isArray(items) || items.length === 0){
-      items = await reactomeMapping("UniProt", gene, mode, app.state.taxId);
-    }
-
-    app.state.reactome.items = Array.isArray(items) ? items : [];
-    $("#mReactome").textContent = String(app.state.reactome.items.length);
-    renderReactomeList(app.state.reactome.items);
-    setPill("#dotReactome", "#stReactome", "ready", "ok");
-  }catch(err){
-    setPill("#dotReactome", "#stReactome", "error", "bad");
-    $("#pathList").innerHTML = `<div class="bd tiny" style="color: var(--warn); padding:10px;">Reactome mapping failed: ${escapeHtml(err.message)}</div>`;
-    $("#mReactome").textContent = "error";
-  }
+  setStatus("Loaded. Autocomplete is on — start typing to see gene suggestions.", "ok");
 }
 
 // ------- Share link via hash -------
 function updateHashFromState(){
-  const s = app.state;
   const params = new URLSearchParams({
-    q: s.queryRaw || $("#q").value.trim(),
+    q: app.state.queryRaw || $("#q").value.trim(),
     tax: String(Number($("#species").value) || 9606),
     score: String(Number($("#score").value) || 700),
     neighbors: String(Number($("#neighbors").value) || 20),
@@ -1807,7 +2347,107 @@ function applyHashToControls(){
   return true;
 }
 
-// ------- Events -------
+// ------- Autocomplete UI -------
+function renderSuggestions(){
+  const box = $("#suggestions");
+  if(!box) return;
+
+  if(!ac.items.length){
+    box.innerHTML = `<div class="sitem"><div class="sub">No suggestions.</div></div>`;
+    return;
+  }
+
+  box.innerHTML = "";
+  ac.items.forEach((it, idx) => {
+    const row = document.createElement("div");
+    row.className = "sitem" + (idx === ac.index ? " active" : "");
+    if(it.loading){
+      row.innerHTML = `<div class="sub">Searching UniProt…</div>`;
+    }else if(it.error){
+      row.innerHTML = `<div class="sub" style="color: rgba(255,204,102,0.85);">Suggestion error: ${escapeHtml(it.error)}</div>`;
+    }else{
+      const key = it.gene || it.acc;
+      const tag = it.reviewed ? `<span class="tag"><strong>Reviewed</strong></span>` : `<span class="tag">Unreviewed</span>`;
+      row.innerHTML = `
+        <div class="main"><span class="mono">${escapeHtml(key)}</span> — ${escapeHtml(it.proteinName || "—")}${tag}</div>
+        <div class="sub"><code>${escapeHtml(it.acc)}</code>${it.org ? " · " + escapeHtml(it.org) : ""}</div>
+      `;
+      row.addEventListener("mousedown", (e) => {
+        // mousedown so blur doesn't hide list before click
+        e.preventDefault();
+        applySuggestion(it, true);
+      });
+    }
+    box.appendChild(row);
+  });
+}
+
+function showSuggestions(){
+  const box = $("#suggestions");
+  if(!box) return;
+  box.classList.remove("hidden");
+  ac.open = true;
+}
+
+function hideSuggestions(){
+  const box = $("#suggestions");
+  if(!box) return;
+  box.classList.add("hidden");
+  ac.open = false;
+  ac.index = -1;
+  ac.items = [];
+}
+
+function applySuggestion(item, autoLoad=true){
+  const val = item.gene || item.acc;
+  $("#q").value = val;
+  hideSuggestions();
+  if(autoLoad) resolveAndLoad();
+}
+
+async function requestSuggestions(){
+  const q = $("#q").value.trim();
+  const taxId = Number($("#species").value) || 9606;
+  if(q.length < 2){
+    hideSuggestions();
+    return;
+  }
+
+  // show box quickly
+  showSuggestions();
+  ac.items = [{ loading: true }];
+  ac.index = -1;
+  renderSuggestions();
+
+  // abort previous
+  if(ac.abort) ac.abort.abort();
+  ac.abort = new AbortController();
+
+  try{
+    const items = await uniprotSuggest(q, taxId, ac.abort.signal);
+    if(!items.length){
+      ac.items = [];
+      ac.index = -1;
+      renderSuggestions();
+      return;
+    }
+    ac.items = items;
+    ac.index = -1;
+    renderSuggestions();
+  }catch(err){
+    if(err.name === "AbortError") return;
+    ac.items = [{ error: err.message }];
+    ac.index = -1;
+    renderSuggestions();
+  }
+}
+
+function scheduleSuggestions(){
+  clearTimeout(ac.timer);
+  ac.timer = setTimeout(() => requestSuggestions().catch(()=>{}), 220);
+}
+
+// ------- UI Events -------
 function setTab(name){
   $$(".tabbtn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   $$(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + name));
@@ -1816,8 +2456,59 @@ function setTab(name){
 $$(".tabbtn").forEach(btn => btn.addEventListener("click", () => setTab(btn.dataset.tab)));
 
 $("#btnLoad").addEventListener("click", () => resolveAndLoad());
-$("#q").addEventListener("keydown", (e) => { if(e.key === "Enter") resolveAndLoad(); });
 
+// Query input: suggestions + keyboard nav
+$("#q").addEventListener("input", () => scheduleSuggestions());
+$("#q").addEventListener("focus", () => scheduleSuggestions());
+$("#q").addEventListener("blur", () => setTimeout(() => { if(ac.open) hideSuggestions(); }, 140));
+
+$("#q").addEventListener("keydown", (e) => {
+  if(ac.open && (e.key === "ArrowDown" || e.key === "ArrowUp")){
+    e.preventDefault();
+    if(!ac.items || !ac.items.length) return;
+    const max = ac.items.length;
+    if(e.key === "ArrowDown"){
+      ac.index = (ac.index + 1) % max;
+    }else{
+      ac.index = (ac.index - 1 + max) % max;
+    }
+    renderSuggestions();
+    return;
+  }
+
+  if(ac.open && e.key === "Enter"){
+    // choose active item or first
+    e.preventDefault();
+    const it = (ac.index >= 0 && ac.items[ac.index] && !ac.items[ac.index].loading && !ac.items[ac.index].error)
+      ? ac.items[ac.index]
+      : (ac.items.find(x => !x.loading && !x.error));
+    if(it){
+      applySuggestion(it, true);
+    }else{
+      hideSuggestions();
+      resolveAndLoad();
+    }
+    return;
+  }
+
+  if(ac.open && e.key === "Escape"){
+    e.preventDefault();
+    hideSuggestions();
+    return;
+  }
+
+  if(e.key === "Enter"){
+    e.preventDefault();
+    resolveAndLoad();
+  }
+});
+
+// Update suggestions when species changes
+$("#species").addEventListener("change", () => {
+  if($("#q").value.trim().length >= 2) scheduleSuggestions();
+});
+
+// Extra buttons
 $("#btnExample").addEventListener("click", () => {
   const examples = ["TP53", "BRCA1", "PTEN", "EGFR", "MTOR", "CFTR"];
   const pick = examples[Math.floor(Math.random() * examples.length)];
@@ -1837,23 +2528,28 @@ $("#btnShare").addEventListener("click", async () => {
     await navigator.clipboard.writeText(url);
     setStatus("Share link copied to clipboard.", "ok");
   }catch{
-    setStatus("Couldn't copy automatically; select the URL in the address bar.", "warn");
+    setStatus("Couldn't copy automatically; copy the URL from the address bar.", "warn");
   }
 });
 
+// Network controls
 $("#btnFit").addEventListener("click", () => { if(cy) cy.fit(undefined, 30); });
 $("#btnLayout").addEventListener("click", () => runLayout());
 $("#btnFind").addEventListener("click", () => {
   const q = $("#netSearch").value.trim().toUpperCase();
   if(!q || !cy) return;
-  const nodes = cy.nodes().filter(n => String(n.data("label")||"").toUpperCase().includes(q) || String(n.id()||"").toUpperCase().includes(q));
+  const nodes = cy.nodes().filter(n =>
+    String(n.data("label")||"").toUpperCase().includes(q) ||
+    String(n.id()||"").toUpperCase().includes(q)
+  );
   if(nodes.length){
-    focusNodeByLabel(String(nodes[0].data("label") || nodes[0].id()).toUpperCase());
+    focusNodeByLabel(String(nodes[0].data("label") || nodes[0].id()).toUpperCase(), String(nodes[0].id()).toUpperCase());
   }else{
     setStatus("No node matched.", "warn");
   }
 });
 
+// Reactome filters + controls
 $("#pathFilter").addEventListener("input", () => renderReactomeList(app.state.reactome.items || []));
 $("#partFilter").addEventListener("input", () => renderParticipants(app.state.reactome.participants || []));
 
@@ -1875,7 +2571,7 @@ $("#btnHighlight").addEventListener("click", () => {
 $("#btnMapPathways").addEventListener("click", () => loadReactomeForCurrent("pathways"));
 $("#btnMapReactions").addEventListener("click", () => loadReactomeForCurrent("reactions"));
 
-// Features filter buttons
+// Features filtering
 let featMode = "all";
 $("#btnFeatAll").addEventListener("click", () => { featMode = "all"; renderFeatures(app.state.features||[], app.state.uniprotSummary?.len||1, featMode, $("#featFilter").value); });
 $("#btnFeatDomains").addEventListener("click", () => { featMode = "domains"; renderFeatures(app.state.features||[], app.state.uniprotSummary?.len||1, featMode, $("#featFilter").value); });
@@ -1928,22 +2624,25 @@ $("#btnReport").addEventListener("click", () => {
 
 // ------- Boot -------
 (function boot(){
-  // Initialize statuses
   setPill("#dotUniprot", "#stUniprot", "idle", "");
   setPill("#dotString", "#stString", "idle", "");
   setPill("#dotReactome", "#stReactome", "idle", "");
   setPill("#dotAF", "#stAF", "idle", "");
   setPill("#dotApp", "#stApp", "ready", "ok");
 
-  // Apply URL hash state if present
+  // Prepare viewers
+  buildCy([], "");
+  init3D();
+  viewer3d.clear();
+  viewer3d.render();
+
+  // Restore from hash
   const applied = applyHashToControls();
   if(applied && $("#q").value.trim()){
     resolveAndLoad();
   }else{
-    // Preload an empty Cytoscape instance so UI doesn't jump
-    buildCy([], "");
-    init3D();
-    clear3D();
+    // Keep report placeholder
+    refreshReport();
   }
 })();
 </script>
