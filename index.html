@@ -407,6 +407,74 @@
     }
     .sitem .tag strong{ color: rgba(255,255,255,0.92); }
 
+
+
+    /* Research Lens */
+    .metric-grid{
+      display:grid;
+      grid-template-columns: repeat(4, minmax(130px, 1fr));
+      gap:10px;
+    }
+    @media (max-width: 1100px){ .metric-grid{ grid-template-columns: repeat(2, minmax(130px, 1fr)); } }
+    @media (max-width: 620px){ .metric-grid{ grid-template-columns: 1fr; } }
+    .metric-card{
+      border:1px solid var(--border);
+      border-radius:14px;
+      background: rgba(255,255,255,0.045);
+      padding:12px;
+      min-height:92px;
+    }
+    .metric-card .label{ color: var(--muted); font-size:11px; letter-spacing:.2px; }
+    .metric-card .value{ font-size:24px; font-weight:850; margin-top:5px; }
+    .metric-card .hint{ color: var(--faint); font-size:11px; margin-top:4px; line-height:1.25; }
+    .bar{
+      height:8px;
+      border-radius:999px;
+      overflow:hidden;
+      background:rgba(255,255,255,0.08);
+      border:1px solid rgba(255,255,255,0.10);
+      margin-top:10px;
+    }
+    .bar > span{
+      display:block;
+      height:100%;
+      width:0%;
+      background: linear-gradient(90deg, rgba(255,92,92,.75), rgba(255,204,102,.85), rgba(98,210,111,.9));
+    }
+    .research-grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+      margin-top:12px;
+    }
+    @media (max-width: 1100px){ .research-grid{ grid-template-columns: 1fr; } }
+    .idea-card{
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:12px;
+      background: rgba(255,255,255,0.04);
+      padding:10px;
+      margin:8px 0;
+    }
+    .idea-card .why{ color: var(--muted); font-size:11px; line-height:1.35; margin-top:4px; }
+    .tagrow{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+    .tag-hot{ border-color: rgba(255,92,92,0.38); color: rgba(255,180,180,.92); }
+    .tag-good{ border-color: rgba(98,210,111,0.38); color: rgba(190,255,198,.92); }
+    .tag-blue{ border-color: rgba(122,162,255,0.38); color: rgba(200,214,255,.95); }
+    .mini-table{ width:100%; border-collapse: collapse; font-size:11px; }
+    .mini-table th, .mini-table td{ text-align:left; padding:7px 6px; border-bottom:1px solid rgba(255,255,255,0.07); vertical-align:top; }
+    .mini-table th{ color:var(--muted); font-weight:700; background:rgba(255,255,255,0.03); }
+    .mini-table td{ color:var(--text); }
+    .notice{
+      border:1px solid rgba(255,204,102,0.28);
+      background: rgba(255,204,102,0.08);
+      border-radius:12px;
+      padding:10px;
+      color: var(--muted);
+      font-size:12px;
+      line-height:1.35;
+      margin-bottom:10px;
+    }
+
     /* Footer */
     footer{
       padding: 10px 12px 16px 12px;
@@ -494,6 +562,7 @@
     <div class="row" style="margin-top:10px; gap:10px;">
       <span class="pill" title="UniProt status"><span class="dot" id="dotUniprot"></span> UniProt <strong id="stUniprot">idle</strong></span>
       <span class="pill" title="STRING status"><span class="dot" id="dotString"></span> STRING <strong id="stString">idle</strong></span>
+      <span class="pill" title="STRING enrichment status"><span class="dot" id="dotEnrich"></span> Enrichment <strong id="stEnrich">idle</strong></span>
       <span class="pill" title="Reactome status"><span class="dot" id="dotReactome"></span> Reactome <strong id="stReactome">idle</strong></span>
       <span class="pill" title="AlphaFold status"><span class="dot" id="dotAF"></span> AlphaFold <strong id="stAF">idle</strong></span>
       <span class="pill" title="App status"><span class="dot" id="dotApp"></span> <strong id="stApp">ready</strong></span>
@@ -530,6 +599,7 @@
                   <div class="k">Reactome pathways</div><div class="v"><span id="mReactome">—</span></div>
                   <div class="k">STRING nodes</div><div class="v"><span id="mNodes">—</span></div>
                   <div class="k">STRING edges</div><div class="v"><span id="mEdges">—</span></div>
+                  <div class="k">STRING enrichment</div><div class="v"><span id="mEnrich">—</span></div>
                   <div class="k">AlphaFold model</div><div class="v"><span id="mAF">—</span></div>
                   <div class="k">Network density</div><div class="v"><span id="mDensity">—</span></div>
                   <div class="k">Mean pLDDT</div><div class="v"><span id="mPlddt">—</span></div>
@@ -544,6 +614,7 @@
                   <button class="btn" id="btnNetJSON">Network JSON</button>
                   <button class="btn" id="btnNetPNG">Network PNG</button>
                   <button class="btn" id="btnReport">Report.md</button>
+                  <button class="btn" id="btnResearchPack">Research Pack.md</button>
                 </div>
                 <div class="tiny muted" style="margin-top:8px;">
                   Exports are generated client-side (no server).
@@ -570,6 +641,7 @@
         <div class="tabbtn" data-tab="pathways">Pathways</div>
         <div class="tabbtn" data-tab="structure">Structure</div>
         <div class="tabbtn" data-tab="features">Features</div>
+        <div class="tabbtn" data-tab="research">Research Lens</div>
         <div class="tabbtn" data-tab="notes">Notes / Report</div>
       </div>
 
@@ -738,6 +810,55 @@
         </div>
       </section>
 
+
+
+      <section class="tab" id="tab-research">
+        <div class="notice">
+          Research Lens turns the loaded UniProt, STRING, Reactome, and AlphaFold evidence into transparent heuristics: triage scores, enrichment signals, confidence/feature overlaps, and next-step hypotheses. It is a research aid, not a diagnostic or clinical conclusion.
+        </div>
+        <div class="metric-grid" id="researchMetrics">
+          <div class="metric-card"><div class="label">Load a protein</div><div class="value">—</div><div class="hint">Research metrics appear here.</div></div>
+        </div>
+        <div class="research-grid">
+          <div class="list">
+            <div class="head">
+              <h3>Hypothesis builder</h3>
+              <span class="badge">evidence-ranked</span>
+            </div>
+            <div class="bd" id="hypothesisList">
+              <div class="small muted">Load a protein to generate transparent, non-AI hypotheses from features, pLDDT, network hubs, pathways, and enrichment.</div>
+            </div>
+          </div>
+          <div class="list">
+            <div class="head">
+              <h3>STRING enrichment</h3>
+              <span class="badge"><span id="enrichCount">0</span> terms</span>
+            </div>
+            <div class="bd" style="padding:10px;">
+              <div class="row" style="gap:8px; justify-content:space-between;">
+                <input id="enrichFilter" type="text" placeholder="Filter enrichment terms…" style="min-width:220px;" />
+                <button class="btn" id="btnReloadEnrich">Reload enrichment</button>
+              </div>
+            </div>
+            <div class="items" id="enrichList"></div>
+          </div>
+        </div>
+        <div class="research-grid">
+          <div class="list">
+            <div class="head"><h3>Structure ↔ feature overlaps</h3><span class="badge">pLDDT + UniProt</span></div>
+            <div class="bd" id="structureFeatureOverlaps">
+              <div class="small muted">AlphaFold confidence and UniProt feature overlap analysis appears here after the structure loads.</div>
+            </div>
+          </div>
+          <div class="list">
+            <div class="head"><h3>Pathway / network gap scan</h3><span class="badge">Reactome vs STRING</span></div>
+            <div class="bd" id="gapScan">
+              <div class="small muted">Select a Reactome pathway and load participants to compare against the STRING neighborhood.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="tab" id="tab-notes">
         <div class="grid2">
           <div class="panel" style="box-shadow:none;">
@@ -828,6 +949,8 @@ const app = {
       neighbors: 20,
       networkType: "functional",
       elements: null,
+      enrichment: [],
+      ppiEnrichment: null,
       selectedNode: null,
       selectedEdge: null,
       hubs: []
@@ -1145,6 +1268,33 @@ function parseStringNetwork(edges){
   }
 
   return { nodes: Array.from(nodesMap.values()), edges: edgeEls };
+}
+
+
+
+async function stringEnrichment(identifiers, species){
+  const clean = (identifiers || []).filter(Boolean).map(String);
+  if(clean.length < 2) return [];
+  const base = "https://string-db.org/api/json/enrichment";
+  const params = new URLSearchParams({
+    identifiers: clean.slice(0, 500).join("\r"),
+    species: String(species),
+    caller_identity: "kai9987kai_bioexplorer"
+  });
+  return await fetchJsonCached(`${base}?${params.toString()}`, {}, 6 * 60 * 60 * 1000);
+}
+
+async function stringPpiEnrichment(identifiers, species, requiredScore=400){
+  const clean = (identifiers || []).filter(Boolean).map(String);
+  if(clean.length < 2) return null;
+  const base = "https://string-db.org/api/json/ppi_enrichment";
+  const params = new URLSearchParams({
+    identifiers: clean.slice(0, 500).join("\r"),
+    species: String(species),
+    required_score: String(requiredScore),
+    caller_identity: "kai9987kai_bioexplorer"
+  });
+  return await fetchJsonCached(`${base}?${params.toString()}`, {}, 6 * 60 * 60 * 1000);
 }
 
 // ------- Tooltip (shared) -------
@@ -1831,6 +1981,7 @@ function renderParticipants(participants){
   }
 
   $("#partHint").textContent = `Loaded ${filtered.length} reference entities. Click “Highlight in network” to mark overlaps.`;
+  renderResearchLens();
 }
 
 // ------- Node → Pathways (lazy) -------
@@ -2069,6 +2220,321 @@ async function loadAlphaFold(acc){
   }
 }
 
+
+
+// ------- Research Lens -------
+function pct(n){
+  const v = Number(n);
+  if(!Number.isFinite(v)) return "—";
+  return `${Math.round(Math.max(0, Math.min(1, v))*100)}%`;
+}
+
+function clampScore(n){
+  return Math.max(0, Math.min(100, Math.round(Number(n)||0)));
+}
+
+function overlapLen(a1, a2, b1, b2){
+  const lo = Math.max(Number(a1)||0, Number(b1)||0);
+  const hi = Math.min(Number(a2)||0, Number(b2)||0);
+  return Math.max(0, hi - lo + 1);
+}
+
+function formatSegments(segs, max=8){
+  if(!segs || !segs.length) return "none";
+  return segs.slice(0, max).map(s => `${s[0]}-${s[1]}`).join(", ") + (segs.length > max ? ", …" : "");
+}
+
+function featureLowConfidenceOverlaps(threshold=70){
+  const af = app.state.alphafold || {};
+  const segs = threshold <= 50 ? (af.segments50 || []) : (af.segments70 || []);
+  const feats = app.state.features || [];
+  const rows = [];
+  for(const f of feats){
+    if(!f.start || !f.end) continue;
+    const cat = featureCategory(f.type);
+    const isInteresting = cat === "sites" || /motif|region|domain|binding|active|modified|phospho|glycos|disulfide/i.test(`${f.type} ${f.desc}`);
+    if(!isInteresting) continue;
+    for(const seg of segs){
+      const ol = overlapLen(f.start, f.end, seg[0], seg[1]);
+      if(ol > 0){
+        rows.push({ feature:f, segment:seg, overlap:ol, threshold });
+        break;
+      }
+    }
+  }
+  rows.sort((a,b) => b.overlap - a.overlap || a.feature.start - b.feature.start);
+  return rows;
+}
+
+function bestEnrichmentTerms(limit=8){
+  const arr = Array.isArray(app.state.string.enrichment) ? app.state.string.enrichment.slice() : [];
+  return arr.sort((a,b) => Number(a.fdr ?? a.fdr_string ?? 1) - Number(b.fdr ?? b.fdr_string ?? 1)).slice(0, limit);
+}
+
+function currentNetworkLabels(){
+  const set = new Set();
+  if(cy){
+    cy.nodes().forEach(n => {
+      if(n.id()) set.add(String(n.id()).toUpperCase());
+      if(n.data("label")) set.add(String(n.data("label")).toUpperCase());
+    });
+  }
+  return set;
+}
+
+function participantTokens(participants){
+  const tokens = [];
+  for(const p of participants || []){
+    const primary = p.name || p.identifier || p.displayName || "";
+    const vals = [primary, p.identifier, p.name, p.displayName].filter(Boolean);
+    const set = new Set();
+    for(const v of vals){
+      set.add(String(v).toUpperCase());
+      String(v).split(/[\s,;:()\[\]{}]+/).forEach(x => { if(x && x.length > 1) set.add(x.toUpperCase()); });
+    }
+    tokens.push({ label: primary || "—", tokens: Array.from(set), raw:p });
+  }
+  return tokens;
+}
+
+function gapScanRows(limit=25){
+  const net = currentNetworkLabels();
+  const rows = [];
+  for(const pt of participantTokens(app.state.reactome.participants || [])){
+    const matched = pt.tokens.some(t => net.has(t));
+    if(!matched) rows.push(pt);
+  }
+  return rows.slice(0, limit);
+}
+
+function buildResearchAnalysis(){
+  const s = app.state.uniprotSummary;
+  const af = app.state.alphafold || {};
+  const plddt = af.plddtSummary;
+  const hubs = app.state.string.hubs || [];
+  const pathways = app.state.reactome.items || [];
+  const enrichment = bestEnrichmentTerms(8);
+  const overlaps70 = featureLowConfidenceOverlaps(70);
+  const overlaps50 = featureLowConfidenceOverlaps(50);
+  const gaps = gapScanRows(30);
+  const nNodes = cy ? cy.nodes().length : (app.state.string.elements?.nodes?.length || 0);
+  const nEdges = cy ? cy.edges().length : (app.state.string.elements?.edges?.length || 0);
+  const density = (nNodes > 1) ? (2*nEdges)/(nNodes*(nNodes-1)) : 0;
+  const edgeScores = cy ? cy.edges().map(e => Number(e.data("score")||0)).filter(Number.isFinite) : [];
+  const meanEdge = edgeScores.length ? edgeScores.reduce((a,c)=>a+c,0)/edgeScores.length : null;
+
+  const structureScore = plddt ? clampScore(plddt.mean) : 0;
+  const networkScore = meanEdge !== null ? clampScore(meanEdge*100) : (nEdges ? 50 : 0);
+  const pathwayScore = clampScore(Math.min(100, pathways.length * 4 + enrichment.length * 8));
+  const hotspotScore = clampScore(Math.min(100, overlaps70.length * 12 + overlaps50.length * 18));
+
+  const hypotheses = [];
+  if(overlaps50.length){
+    const top = overlaps50[0];
+    hypotheses.push({
+      title: "Possible disordered regulatory hotspot",
+      rank: "high",
+      why: `${top.feature.type} ${top.feature.start}-${top.feature.end} overlaps a pLDDT<50 segment (${top.segment[0]}-${top.segment[1]}). Low-confidence regions often need cautious interpretation and may reflect disorder/flexibility rather than a stable fold.`,
+      tags: ["AlphaFold", "UniProt feature", "IDR-like"]
+    });
+  }else if(overlaps70.length){
+    const top = overlaps70[0];
+    hypotheses.push({
+      title: "Flexible feature overlap worth checking",
+      rank: "medium",
+      why: `${top.feature.type} ${top.feature.start}-${top.feature.end} overlaps a pLDDT<70 segment (${top.segment[0]}-${top.segment[1]}). Treat structural placement cautiously and compare with motif/PTM evidence.`,
+      tags: ["confidence", "feature overlap"]
+    });
+  }
+  if(hubs.length){
+    const h = hubs[0];
+    hypotheses.push({
+      title: `Network hub candidate: ${h.label}`,
+      rank: h.degree >= 5 ? "high" : "medium",
+      why: `${h.label} is the highest-degree node in the current STRING neighborhood (degree ${h.degree}). Use it as a systems-level perturbation/validation candidate, then compare physical vs functional network mode.`,
+      tags: ["STRING", "hub", "perturbation"]
+    });
+  }
+  if(enrichment.length){
+    const e = enrichment[0];
+    hypotheses.push({
+      title: `Dominant enriched signal: ${e.description || e.term || "term"}`,
+      rank: Number(e.fdr ?? 1) < 0.01 ? "high" : "medium",
+      why: `The network enrichment top term has FDR ${safeText(e.fdr, "—")}. Use this as a compact label for the current neighborhood, not as proof of direct mechanism.`,
+      tags: [safeText(e.category, "enrichment"), "FDR"]
+    });
+  }
+  if(gaps.length && app.state.reactome.selected){
+    hypotheses.push({
+      title: "Reactome/STRING data-gap candidates",
+      rank: "medium",
+      why: `${gaps.length} selected-pathway participants were not matched to the visible STRING neighborhood. These may be missing because of score thresholds, species/identifier mapping, pathway breadth, or true network boundary choices.`,
+      tags: ["Reactome", "STRING", "gap scan"]
+    });
+  }
+  if(!hypotheses.length && s){
+    hypotheses.push({
+      title: "Evidence baseline loaded",
+      rank: "low",
+      why: "The core evidence loaded, but no strong heuristic hotspot was detected yet. Try lowering STRING score, selecting a Reactome pathway, or comparing functional vs physical network mode.",
+      tags: ["baseline"]
+    });
+  }
+
+  return { structureScore, networkScore, pathwayScore, hotspotScore, density, meanEdge, overlaps70, overlaps50, gaps, enrichment, hypotheses };
+}
+
+function metricCard(label, value, score, hint){
+  return `<div class="metric-card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div><div class="bar"><span style="width:${clampScore(score)}%"></span></div><div class="hint">${escapeHtml(hint)}</div></div>`;
+}
+
+function renderResearchLens(){
+  if(!$("#researchMetrics")) return;
+  const s = app.state.uniprotSummary;
+  if(!s){
+    $("#researchMetrics").innerHTML = `<div class="metric-card"><div class="label">Load a protein</div><div class="value">—</div><div class="hint">Research metrics appear here.</div></div>`;
+    return;
+  }
+  const a = buildResearchAnalysis();
+  $("#researchMetrics").innerHTML = [
+    metricCard("Structure confidence", a.structureScore ? `${a.structureScore}/100` : "—", a.structureScore, "Mean pLDDT from AlphaFold PDB B-factors."),
+    metricCard("Network evidence", a.meanEdge !== null ? `${Math.round(a.meanEdge*100)}/100` : "—", a.networkScore, "Mean STRING edge score in the visible neighborhood."),
+    metricCard("Pathway context", `${(app.state.reactome.items||[]).length} events`, a.pathwayScore, "Reactome mappings plus STRING enrichment context."),
+    metricCard("Hotspot signal", `${a.overlaps70.length} overlaps`, a.hotspotScore, "UniProt features overlapping pLDDT<70 segments.")
+  ].join("");
+
+  const rankClass = r => r === "high" ? "tag-hot" : (r === "medium" ? "tag-blue" : "tag-good");
+  $("#hypothesisList").innerHTML = a.hypotheses.map(h => `
+    <div class="idea-card">
+      <div class="title">${escapeHtml(h.title)} <span class="badge ${rankClass(h.rank)}">${escapeHtml(h.rank)}</span></div>
+      <div class="why">${escapeHtml(h.why)}</div>
+      <div class="tagrow">${(h.tags||[]).map(t=>`<span class="badge">${escapeHtml(t)}</span>`).join("")}</div>
+    </div>
+  `).join("");
+
+  renderEnrichmentList();
+
+  const overlaps = a.overlaps70.slice(0, 12);
+  if(overlaps.length){
+    $("#structureFeatureOverlaps").innerHTML = `
+      <table class="mini-table"><thead><tr><th>Feature</th><th>Range</th><th>pLDDT segment</th><th>Overlap</th></tr></thead><tbody>
+      ${overlaps.map(o => `<tr><td>${escapeHtml(o.feature.type)}<div class="faint">${escapeHtml(o.feature.desc||"")}</div></td><td class="mono">${o.feature.start}-${o.feature.end}</td><td class="mono">&lt;${o.threshold}: ${o.segment[0]}-${o.segment[1]}</td><td class="mono">${o.overlap} aa</td></tr>`).join("")}
+      </tbody></table>
+      <div class="tiny muted" style="margin-top:8px;">pLDDT&lt;50 segments: <span class="mono">${escapeHtml(formatSegments(app.state.alphafold.segments50 || []))}</span></div>
+    `;
+  }else{
+    $("#structureFeatureOverlaps").innerHTML = `<div class="small muted">No feature overlaps with pLDDT&lt;70 segments detected yet, or AlphaFold confidence is not loaded.</div>`;
+  }
+
+  if(app.state.reactome.selected && (app.state.reactome.participants||[]).length){
+    const total = (app.state.reactome.participants||[]).length;
+    const gapRows = a.gaps.slice(0, 15);
+    $("#gapScan").innerHTML = `
+      <div class="small muted">Selected event: <strong>${escapeHtml(app.state.reactome.selected.displayName || app.state.reactome.selected.stId || "—")}</strong></div>
+      <div class="tiny muted" style="margin-top:6px;">${gapRows.length} of ${total} visible/reference participants were not matched to current STRING node labels/IDs.</div>
+      ${gapRows.length ? `<table class="mini-table" style="margin-top:8px;"><thead><tr><th>Candidate missing from visible network</th><th>Source ID</th></tr></thead><tbody>${gapRows.map(g=>`<tr><td>${escapeHtml(g.label)}</td><td class="mono">${escapeHtml(g.raw?.identifier || "—")}</td></tr>`).join("")}</tbody></table>` : `<div class="idea-card"><div class="title">No obvious gap in visible participants</div><div class="why">The current participant tokens overlap the visible STRING labels/IDs. This is still heuristic because identifiers and pathway forms may differ.</div></div>`}
+    `;
+  }else{
+    $("#gapScan").innerHTML = `<div class="small muted">Select a Reactome pathway/reaction and load participants to compare against the current STRING neighborhood.</div>`;
+  }
+}
+
+function renderEnrichmentList(){
+  const list = $("#enrichList");
+  if(!list) return;
+  const terms = Array.isArray(app.state.string.enrichment) ? app.state.string.enrichment : [];
+  const filter = ($("#enrichFilter")?.value || "").trim().toLowerCase();
+  const filtered = terms.filter(t => {
+    if(!filter) return true;
+    return `${t.term || ""} ${t.description || ""} ${t.category || ""}`.toLowerCase().includes(filter);
+  }).sort((a,b) => Number(a.fdr ?? 1) - Number(b.fdr ?? 1));
+  if($("#enrichCount")) $("#enrichCount").textContent = String(filtered.length);
+  if(!filtered.length){
+    list.innerHTML = `<div class="item"><div class="meta">No enrichment terms loaded. Load a protein/network or click Reload enrichment.</div></div>`;
+    return;
+  }
+  list.innerHTML = "";
+  for(const t of filtered.slice(0, 80)){
+    const el = document.createElement("div");
+    el.className = "item";
+    const fdr = Number(t.fdr ?? t.fdr_string ?? NaN);
+    const genes = t.number_of_genes || t.number_of_genes_in_background || t.inputGenes || "";
+    el.innerHTML = `
+      <div class="title">${escapeHtml(t.description || t.term || "—")}</div>
+      <div class="meta"><span class="badge mono">${escapeHtml(t.category || "term")}</span> <code>${escapeHtml(t.term || "")}</code> ${Number.isFinite(fdr) ? `· FDR ${fdr.toExponential(2)}` : ""} ${genes ? `· genes ${escapeHtml(genes)}` : ""}</div>
+    `;
+    list.appendChild(el);
+  }
+}
+
+async function loadStringEnrichmentForCurrent(){
+  const els = app.state.string.elements;
+  if(!els || !els.nodes || els.nodes.length < 2){
+    app.state.string.enrichment = [];
+    app.state.string.ppiEnrichment = null;
+    $("#mEnrich").textContent = "—";
+    renderResearchLens();
+    return;
+  }
+  setPill("#dotEnrich", "#stEnrich", "loading…", "warn");
+  try{
+    const ids = els.nodes.map(n => n.data?.id || n.data?.label).filter(Boolean);
+    const [enrich, ppi] = await Promise.allSettled([
+      stringEnrichment(ids, app.state.taxId),
+      stringPpiEnrichment(ids, app.state.taxId, app.state.string.requiredScore)
+    ]);
+    app.state.string.enrichment = enrich.status === "fulfilled" && Array.isArray(enrich.value) ? enrich.value : [];
+    app.state.string.ppiEnrichment = ppi.status === "fulfilled" ? ppi.value : null;
+    $("#mEnrich").textContent = String(app.state.string.enrichment.length);
+    setPill("#dotEnrich", "#stEnrich", app.state.string.enrichment.length ? "ready" : "empty", app.state.string.enrichment.length ? "ok" : "warn");
+  }catch(err){
+    app.state.string.enrichment = [];
+    app.state.string.ppiEnrichment = null;
+    $("#mEnrich").textContent = "error";
+    setPill("#dotEnrich", "#stEnrich", "error", "bad");
+  }
+  renderResearchLens();
+  refreshReport();
+}
+
+function buildResearchPack(){
+  const s = app.state.uniprotSummary;
+  if(!s) return "# BioExplorer Research Pack\n\nNo protein loaded.\n";
+  const a = buildResearchAnalysis();
+  const topTerms = a.enrichment.slice(0, 12).map(t => `- ${t.description || t.term || "—"} (${t.category || "term"}; FDR ${safeText(t.fdr, "—")})`).join("\n") || "- none loaded";
+  const hyps = a.hypotheses.map((h,i) => `${i+1}. **${h.title}** [${h.rank}]\n   - ${h.why}\n   - Tags: ${(h.tags||[]).join(", ")}`).join("\n");
+  const overlaps = a.overlaps70.slice(0, 12).map(o => `- ${o.feature.type} ${o.feature.start}-${o.feature.end} overlaps pLDDT<${o.threshold} segment ${o.segment[0]}-${o.segment[1]} (${o.overlap} aa)`).join("\n") || "- none detected";
+  const gaps = a.gaps.slice(0, 20).map(g => `- ${g.label} (${g.raw?.identifier || "—"})`).join("\n") || "- no selected pathway gaps scanned";
+  return `# BioExplorer Research Pack — ${(s.genes||[]).join(", ") || s.acc}
+
+## Evidence scores
+- Structure confidence: ${a.structureScore}/100
+- Network evidence: ${a.networkScore}/100
+- Pathway context: ${a.pathwayScore}/100
+- Feature/confidence hotspot signal: ${a.hotspotScore}/100
+
+## Hypotheses
+${hyps}
+
+## STRING enrichment
+${topTerms}
+
+## Structure ↔ feature overlaps
+${overlaps}
+
+## Reactome ↔ STRING gap scan
+${gaps}
+
+## Guardrails
+- These are transparent heuristics for research planning.
+- Low AlphaFold confidence can indicate disorder/flexibility, but it is not proof by itself.
+- STRING associations can be functional or physical depending on the selected mode and score threshold.
+- Reactome participants can be specific molecular forms/localisations, so identifier matching is approximate.
+
+Generated by Kai9987kai BioExplorer Research Lens.
+`;
+}
+
 // ------- Report generation -------
 function buildReport(){
   const s = app.state.uniprotSummary;
@@ -2129,6 +2595,12 @@ ${topPaths ? "\n### Top mapped events\n" + topPaths + "\n" : ""}
 - ${afLine}
 ${plddtLines ? "\n### Confidence (AlphaFold pLDDT)\n" + plddtLines + "\n" : ""}
 
+## Research Lens
+${(() => { const a = buildResearchAnalysis(); return a.hypotheses.map((h,i)=>`${i+1}. **${h.title}** [${h.rank}] — ${h.why}`).join("\n"); })()}
+
+### STRING enrichment snapshot
+${(() => { const terms = bestEnrichmentTerms(8); return terms.length ? terms.map(t=>`- ${t.description || t.term || "—"} (${t.category || "term"}; FDR ${safeText(t.fdr, "—")})`).join("\n") : "- none loaded"; })()}
+
 ## Next steps / ideas (non-AI heuristics)
 - Compare **Reactome participants** vs **STRING neighborhood** to find missing edges (data gaps).
 - Check if **features/domains** overlap with **low-confidence** regions (possible IDRs, flexible linkers).
@@ -2143,6 +2615,7 @@ function refreshReport(){
   const report = buildReport();
   app.state.report = report;
   $("#reportText").value = report;
+  renderResearchLens();
 }
 
 // ------- Reactome mapping for current protein -------
@@ -2210,7 +2683,12 @@ async function loadProtein(rawQuery){
   // reset pLDDT overlays (will be added back if AlphaFold loads)
   app.state.alphafold.segments50 = [];
   app.state.alphafold.segments70 = [];
+  app.state.string.enrichment = [];
+  app.state.string.ppiEnrichment = null;
   $("#mPlddt").textContent = "—";
+  $("#mEnrich").textContent = "—";
+  setPill("#dotEnrich", "#stEnrich", "idle", "");
+  renderResearchLens();
 
   // UNI
   setPill("#dotUniprot", "#stUniprot", "loading…", "warn");
@@ -2276,6 +2754,7 @@ async function loadProtein(rawQuery){
     $("#mNodes").textContent = "—";
     $("#mEdges").textContent = "—";
     $("#mDensity").textContent = "—";
+    $("#mEnrich").textContent = "—";
   }catch(err){
     $("#featList").innerHTML = `<div class="bd tiny" style="color: var(--warn); padding:10px;">Feature render error: ${escapeHtml(err.message)}</div>`;
   }
@@ -2299,12 +2778,14 @@ async function loadProtein(rawQuery){
     $("#mEdges").textContent = String(els.edges.length);
 
     setPill("#dotString", "#stString", "ready", "ok");
+    await loadStringEnrichmentForCurrent();
   }catch(err){
     setPill("#dotString", "#stString", "error", "bad");
     $("#netStats").innerHTML = `<div class="tiny" style="color: var(--warn);">STRING error: ${escapeHtml(err.message)}</div>`;
     $("#mNodes").textContent = "error";
     $("#mEdges").textContent = "error";
     $("#mDensity").textContent = "—";
+    $("#mEnrich").textContent = "—";
     $("#hubList").innerHTML = `<div class="item"><div class="meta">No hubs (network failed to load).</div></div>`;
   }
 
@@ -2578,6 +3059,10 @@ $("#btnFeatDomains").addEventListener("click", () => { featMode = "domains"; ren
 $("#btnFeatSites").addEventListener("click", () => { featMode = "sites"; renderFeatures(app.state.features||[], app.state.uniprotSummary?.len||1, featMode, $("#featFilter").value); });
 $("#featFilter").addEventListener("input", () => renderFeatures(app.state.features||[], app.state.uniprotSummary?.len||1, featMode, $("#featFilter").value));
 
+// Research Lens controls
+$("#enrichFilter").addEventListener("input", () => renderEnrichmentList());
+$("#btnReloadEnrich").addEventListener("click", () => loadStringEnrichmentForCurrent());
+
 // Report + Notes
 $("#btnCopyReport").addEventListener("click", async () => {
   try{
@@ -2621,11 +3106,15 @@ $("#btnReport").addEventListener("click", () => {
   refreshReport();
   downloadText(`report_${app.state.uniprotSummary?.genes?.[0] || app.state.uniprotAcc || "export"}.md`, $("#reportText").value || "");
 });
+$("#btnResearchPack").addEventListener("click", () => {
+  downloadText(`research_pack_${app.state.uniprotSummary?.genes?.[0] || app.state.uniprotAcc || "export"}.md`, buildResearchPack());
+});
 
 // ------- Boot -------
 (function boot(){
   setPill("#dotUniprot", "#stUniprot", "idle", "");
   setPill("#dotString", "#stString", "idle", "");
+  setPill("#dotEnrich", "#stEnrich", "idle", "");
   setPill("#dotReactome", "#stReactome", "idle", "");
   setPill("#dotAF", "#stAF", "idle", "");
   setPill("#dotApp", "#stApp", "ready", "ok");
