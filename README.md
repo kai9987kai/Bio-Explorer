@@ -1,6 +1,6 @@
-# Kai9987kai BioExplorer Research Lens
+# BioExplorer Research Lens
 
-**Kai9987kai BioExplorer Research Lens** is a single-file, browser-based protein intelligence dashboard that connects live biological data sources into one interactive research workflow.
+**BioExplorer Research Lens** is a single-file, browser-based protein intelligence dashboard that connects live biological data sources into one interactive research workflow.
 
 It lets you enter a gene name, protein name, or UniProt accession and explore the result through **UniProt annotations**, **STRING interaction networks**, **Reactome pathways**, **AlphaFold structures**, **protein feature tracks**, and a new **Research Lens** that turns the loaded evidence into transparent research heuristics and exportable hypotheses.
 
